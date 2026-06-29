@@ -14,7 +14,7 @@ const server = dgram.createSocket('udp4');
 // ───────────────────────────────────────────────
 // 1. 정적 데이터
 // ───────────────────────────────────────────────
-const COIN_NAMES = ['성빈코인', '호근코인', '정재코인'];
+const COIN_NAMES = ['성빈코인', '호근코인', '정재코인', '몰탈코인', '펭즈코인', '첨지코인'];
 const ADMIN_NAME = 'A';
 
 const ITEM_SHOP = {
@@ -24,6 +24,7 @@ const ITEM_SHOP = {
     '아귀의눈': { price: 15000, type: '눈빛', desc: '5% 확률로 삼팔광땡 설계 가능' },
     '고광렬의입담': { price: 500, type: '타이틀', desc: '단톡방 화려한 말빨 장착' }
 };
+
 
 // 단위: P (포인트). 만=10,000 / 억=100,000,000 / 조=1,000,000,000,000
 const MAN = 10000;
@@ -56,19 +57,24 @@ const DEFAULT_LUXURY = {
 const DEFAULT_COIN = {
     '성빈코인': { currentPrice: 100, lastPrice: 100, desc: '하이리스크 코인' },
     '호근코인': { currentPrice: 100, lastPrice: 100, desc: '안정 추구형 대장 코인' },
-    '정재코인': { currentPrice: 100, lastPrice: 100, desc: '상장폐지 위험 잡코인' }
+    '정재코인': { currentPrice: 100, lastPrice: 100, desc: '상장폐지 위험 잡코인' },
+    '몰탈코인': { currentPrice: 100, lastPrice: 100, desc: '신생 다크호스 코인' },
+    '펭즈코인': { currentPrice: 100, lastPrice: 100, desc: '커뮤니티 밈 코인' },
+    '첨지코인': { currentPrice: 100, lastPrice: 100, desc: '큰손이 움직이는 코인' }
 };
 
 // 직원(알바) 목록 — hirePrice: 영입 가격, perMinute: 분당 수익(P)
 const EMPLOYEE_SHOP = {
     '박장호': { hirePrice: 500 * MAN, perMinute: 5000, desc: '평범한 알바생' },
     '박성빈': { hirePrice: 3000 * MAN, perMinute: 30000, desc: '성실한 직원' },
+    '몰탈': { hirePrice: 8000 * MAN, perMinute: 80000, desc: '눈빛이 매서운 신입' },
     '임정재': { hirePrice: Math.round(1.2 * EOK), perMinute: 120000, desc: '능력있는 매니저' },
     '조호근': { hirePrice: 5 * EOK, perMinute: 500000, desc: '베테랑 임원' },
+    '펭즈': { hirePrice: 50 * EOK, perMinute: 5000000, desc: '의문의 거상' },
     '워렌버핏': { hirePrice: 1 * JO, perMinute: 10000000, desc: '투자의 귀재' },
+    '첨지': { hirePrice: Math.round(2.5 * JO), perMinute: 25000000, desc: '소문 속의 큰손' },
     '일론머스크': { hirePrice: 5 * JO, perMinute: 10000000, desc: '괴짜 천재 사업가 (1분당 1000만P)' }
 };
-
 const DECK = [
     { m: 1, name: '1광' }, { m: 1, name: '1피' }, { m: 2, name: '2열' }, { m: 2, name: '2피' },
     { m: 3, name: '3광' }, { m: 3, name: '3피' }, { m: 4, name: '4열' }, { m: 4, name: '4피' },
@@ -97,9 +103,20 @@ const NEWS_POOL = {
     '정재코인': {
         up: ['📰 [찌라시] 워렌 버핏이 새벽에 정재코인을 대량 매집한 정황 포착!', '📰 [속보] 글로벌 하이퍼카 결제 시스템 도입 계약 완료'],
         down: ['📰 [🚨상폐] 상장 폐지 실질심사 대상 지정 소식에 역대급 폭락!', '📰 [악재] 정재코인 공식 커뮤니티 해킹 발생 신뢰도 추락']
+    },
+    '몰탈코인': {
+        up: ['📰 [속보] \'몰탈코인\' 정체불명 고래, 단일 거래로 물량 절반 매집!', '📰 [호재] 몰탈코인 개발팀, 글로벌 거래소 동시 상장 발표'],
+        down: ['📰 [경보] 몰탈코인 공식 텔레그램 갑자기 폐쇄, 먹튀 의혹 확산', '📰 [속보] 몰탈코인 핵심 개발자 잠적, 커뮤니티 패닉']
+    },
+    '펭즈코인': {
+        up: ['📰 [화제] \'펭즈코인\', 유명 인플루언서 언급 한 줄에 거래량 폭증', '📰 [호재] 펭즈코인 밈 챌린지 전세계 확산, 신규 지갑 급증'],
+        down: ['📰 [뉴스] 펭즈코인 밈 유행 시들, 거래량 급감 우려', '📰 [경보] 펭즈코인 커뮤니티 내부 분열로 신뢰도 하락']
+    },
+    '첨지코인': {
+        up: ['📰 [찌라시] \'첨지코인\' 뒤에 큰손이 있다는 소문에 매수세 집중', '📰 [속보] 첨지코인, 은밀한 기관 자금 유입 정황 포착'],
+        down: ['📰 [경보] 첨지코인 큰손 물량 일부 이탈, 시장 동요', '📰 [악재] 첨지코인 관련 규제 검토 소식에 매도 압력']
     }
 };
-
 const QUIZZES = [
     { q: '세상에서 가장 가난한 왕은?', a: '최저임금' },
     { q: '차가 울면 무엇일까요?', a: '카잉' },
