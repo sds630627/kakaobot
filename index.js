@@ -15,6 +15,7 @@ const server = dgram.createSocket('udp4');
 // 1. 정적 데이터
 // ───────────────────────────────────────────────
 const COIN_NAMES = ['성빈코인', '호근코인', '정재코인'];
+const ADMIN_NAME = 'A';
 
 const ITEM_SHOP = {
     '평경장의손': { price: 1000, type: '무기', desc: '섯다 패 교체 확률 제공 (1단계)' },
@@ -1301,7 +1302,74 @@ if (command === '!스플릿') {
         `💵 !히트 / !스탠드 / !더블다운 으로 1번째 패를 먼저 진행하세요.`
     );
 }
-
+if (command === '!관리자지급') {
+    if (sender !== ADMIN_NAME) return reply('❌ 운영자 권한이 필요합니다.');
+    if (args.length < 2) return reply('❌ 양식: !관리자지급 [닉네임] [금액(음수 가능)]\n예: !관리자지급 홍길동 -50000');
+ 
+    const targetName = args[0];
+    const amount = parseInt(args[1], 10);
+ 
+    if (Number.isNaN(amount)) return reply('❌ 금액이 올바르지 않습니다.');
+    if (!userExists(db, targetName)) return reply(`❌ "${targetName}" 유저를 찾을 수 없습니다.`);
+ 
+    const target = ensureUser(db, targetName);
+    const before = target.points;
+    target.points += amount;
+    if (target.points < 0) target.points = 0; // 음수 방지
+ 
+    saveData(db);
+    return reply(
+        `🛡️ [운영자 처리 완료]\n` +
+        `👤 대상: ${targetName}\n` +
+        `💵 변동: ${amount >= 0 ? '+' : ''}${amount.toLocaleString()}P\n` +
+        `📊 ${before.toLocaleString()}P → ${target.points.toLocaleString()}P`
+    );
+}
+ 
+// ── 운영자: 포인트 강제 설정 (정확히 그 숫자로) ──
+if (command === '!관리자설정') {
+    if (sender !== ADMIN_NAME) return reply('❌ 운영자 권한이 필요합니다.');
+    if (args.length < 2) return reply('❌ 양식: !관리자설정 [닉네임] [금액]\n예: !관리자설정 홍길동 100000');
+ 
+    const targetName = args[0];
+    const amount = parseInt(args[1], 10);
+ 
+    if (Number.isNaN(amount) || amount < 0) return reply('❌ 금액이 올바르지 않습니다. (0 이상)');
+    if (!userExists(db, targetName)) return reply(`❌ "${targetName}" 유저를 찾을 수 없습니다.`);
+ 
+    const target = ensureUser(db, targetName);
+    const before = target.points;
+    target.points = amount;
+ 
+    saveData(db);
+    return reply(
+        `🛡️ [운영자 처리 완료]\n` +
+        `👤 대상: ${targetName}\n` +
+        `📊 포인트 강제 설정: ${before.toLocaleString()}P → ${target.points.toLocaleString()}P`
+    );
+}
+ 
+// ── 운영자: 유저 전체 초기화 (포인트+명품+코인+직원+장비 전부) ──
+if (command === '!관리자초기화') {
+    if (sender !== ADMIN_NAME) return reply('❌ 운영자 권한이 필요합니다.');
+    if (args.length < 1) return reply('❌ 양식: !관리자초기화 [닉네임]\n예: !관리자초기화 홍길동');
+ 
+    const targetName = args[0];
+    if (!userExists(db, targetName)) return reply(`❌ "${targetName}" 유저를 찾을 수 없습니다.`);
+ 
+    const before = ensureUser(db, targetName);
+    const beforePoints = before.points;
+ 
+    db[targetName] = createDefaultUser(); // 완전 초기 상태로 리셋
+ 
+    saveData(db);
+    return reply(
+        `🛡️ [운영자 처리 완료]\n` +
+        `👤 대상: ${targetName}\n` +
+        `🔄 전체 초기화 완료 (포인트/명품/코인/직원/장비 전부 리셋)\n` +
+        `📊 ${beforePoints.toLocaleString()}P → 2,000P`
+    );
+}
 
         if (currentQuiz && content.includes(currentQuiz.a)) {
             if (quizTimer) { clearTimeout(quizTimer); quizTimer = null; }
