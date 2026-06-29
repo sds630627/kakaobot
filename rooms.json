@@ -1,0 +1,14 @@
+{
+  "박성빈": {
+    "address": "192.168.219.125",
+    "port": 40471,
+    "quiz": false,
+    "news": false
+  },
+  "-": {
+    "address": "192.168.219.125",
+    "port": 53255,
+    "quiz": false,
+    "news": false
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "luxury": {
+    "페라리_SF90_스트라달레": {
+      "basePrice": 60000,
+      "currentPrice": 1498374,
+      "type": "하이퍼카"
+    },
+    "포르쉐_911_GT3_RS": {
+      "basePrice": 35000,
+      "currentPrice": 354603,
+      "type": "스포츠카"
+    },
+    "람보르기니_우루스_퍼포만테": {
+      "basePrice": 28000,
+      "currentPrice": 59826,
+      "type": "슈퍼SUV"
+    },
+    "롤렉스_서브마리너_데이트": {
+      "basePrice": 15000,
+      "currentPrice": 39666,
+      "type": "명품시계"
+    },
+    "오데마피게_로열오크_크로노": {
+      "basePrice": 45000,
+      "currentPrice": 23886,
+      "type": "하이퍼시계"
+    },
+    "한강뷰_신축빌라": {
+      "basePrice": 1000000,
+      "currentPrice": 2449525,
+      "type": "빌라"
+    },
+    "양평_전원주택": {
+      "basePrice": 4000000,
+      "currentPrice": 13178547,
+      "type": "주택"
+    },
+    "강남_타워팰리스_아파트": {
+      "basePrice": 8000000,
+      "currentPrice": 4068320,
+      "type": "아파트"
+    }
+  },
+  "coin": {
+    "성빈코인": {
+      "currentPrice": 4321,
+      "lastPrice": 2840,
+      "desc": "급등락이 심한 하이리스크 코인"
+    },
+    "호근코인": {
+      "currentPrice": 70,
+      "lastPrice": 115,
+      "desc": "우상향 안정 추구형 대장 코인"
+    },
+    "정재코인": {
+      "currentPrice": 2216,
+      "lastPrice": 2050,
+      "desc": "상장폐지 위험이 도사리는 잡코인"
+    }
+  }
+}
