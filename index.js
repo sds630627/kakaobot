@@ -1,4 +1,4 @@
-'use strict';
+
 
 // index.js — 타짜 카카오봇 UDP 매칭 엔진 (v2: 번호구매/초고가 명품/직원 시스템)
 const dgram = require('dgram');
@@ -115,6 +115,7 @@ let COIN_MARKET = {};
 const gameSessions = {};
 let horseRace = null;
 let numberGuessSessions = {};
+const blackjackSessions = {};
 let currentQuiz = null;
 let quizTimer = null;
 let activeQuizRooms = [];
@@ -239,11 +240,148 @@ function evaluateHand(p1, p2) {
     if (kkut === 0) return { score: 1000, name: '망통(0끗)' };
     return { score: 1000 + kkut, name: `${kkut}끗` };
 }
+
+function advanceBlackjack(db, room, sender) {
+    const session = blackjackSessions[room];
+    if (!session) return '';
+ 
+    // 다음 미완료 패가 있는지 확인 (스플릿 시 2번째 패로 이동)
+    const nextIdx = session.hands.findIndex((h, idx) => idx > session.activeHandIdx && !h.done);
+    if (nextIdx !== -1) {
+        session.activeHandIdx = nextIdx;
+        session.canFirstAction = true; // 다음 패는 새로운 첫 행동
+        const nextHand = session.hands[nextIdx];
+        return `\n➡️ [${nextIdx + 1}번째 패로 이동]\n🃏 ${handDisplay(nextHand.cards)} (${calcHandValue(nextHand.cards)})\n💵 !히트 / !스탠드 / !더블다운 으로 진행하세요.`;
+    }
+ 
+    // 모든 패가 종료됨 → 딜러 진행 + 전체 정산
+    const user = ensureUser(db, sender);
+    const allBust = session.hands.every(h => calcHandValue(h.cards) > 21);
+ 
+    let dealerHand = session.dealerHand;
+    if (!allBust) {
+        dealerHand = dealerPlay(dealerHand);
+    }
+    const dScore = calcHandValue(dealerHand);
+ 
+    let resultMsg = `\n\n🤖 딜러 패 공개: ${handDisplay(dealerHand)} (${dScore})\n──────────────────\n`;
+    let totalPayout = 0;
+ 
+    session.hands.forEach((hand, idx) => {
+        const betForThisHand = hand.doubled ? session.bet * 2 : session.bet;
+        const judged = judgeOneHand(hand.cards, dealerHand, betForThisHand, session.hands.length > 1);
+        totalPayout += betForThisHand + judged.payout; // 원금 환급 + 손익
+ 
+        const prefix = session.hands.length > 1 ? `[${idx + 1}번째 패] ` : '';
+        resultMsg += `${prefix}${handDisplay(hand.cards)} (${judged.pScore}) → ${resultLabel(judged.resultType)} ${judged.payout >= 0 ? '+' : ''}${judged.payout.toLocaleString()}P\n`;
+    });
+ 
+    user.points += totalPayout;
+    saveData(db);
+    delete blackjackSessions[room];
+ 
+    resultMsg += `──────────────────\n💰 내 지갑: ${user.points.toLocaleString()}P`;
+    return resultMsg;
+}
 function getNumberGuessMultiplier(n) {
     // 배율 = N × 0.83 (소수점 둘째자리까지)
     return Math.round(n * 0.83 * 100) / 100;
 }
-
+const BLACKJACK_SUITS = ['♠', '♥', '♦', '♣'];
+const BLACKJACK_RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+ 
+function drawBlackjackCard() {
+    const suit = BLACKJACK_SUITS[Math.floor(Math.random() * 4)];
+    const rank = BLACKJACK_RANKS[Math.floor(Math.random() * 13)];
+    return { rank, suit };
+}
+ 
+function cardDisplay(card) {
+    return `${card.rank}${card.suit}`;
+}
+ 
+function handDisplay(hand) {
+    return hand.map(cardDisplay).join(' ');
+}
+ 
+// 핸드의 점수 계산 (A를 1 또는 11로 자동 최적화)
+function calcHandValue(hand) {
+    let total = 0;
+    let aceCount = 0;
+    for (const card of hand) {
+        if (card.rank === 'A') {
+            total += 11;
+            aceCount++;
+        } else if (card.rank === 'J' || card.rank === 'Q' || card.rank === 'K') {
+            total += 10;
+        } else {
+            total += parseInt(card.rank, 10);
+        }
+    }
+    while (total > 21 && aceCount > 0) {
+        total -= 10;
+        aceCount--;
+    }
+    return total;
+}
+ 
+function isBlackjack(hand) {
+    return hand.length === 2 && calcHandValue(hand) === 21;
+}
+ 
+// 딜러 자동 진행 (17 이상까지 히트)
+function dealerPlay(dealerHand) {
+    while (calcHandValue(dealerHand) < 17) {
+        dealerHand.push(drawBlackjackCard());
+    }
+    return dealerHand;
+}
+ 
+// 한 핸드(또는 스플릿된 핸드 하나)에 대한 승패 판정 텍스트
+function judgeOneHand(playerHand, dealerHand, betAmount, isSplitHand) {
+    const pScore = calcHandValue(playerHand);
+    const dScore = calcHandValue(dealerHand);
+    const playerBJ = !isSplitHand && isBlackjack(playerHand); // 스플릿 핸드는 블랙잭 보너스 미적용(일반 룰)
+    const dealerBJ = isBlackjack(dealerHand);
+ 
+    let resultType, payout;
+ 
+    if (pScore > 21) {
+        resultType = 'BUST';
+        payout = -betAmount;
+    } else if (playerBJ && !dealerBJ) {
+        resultType = 'BLACKJACK';
+        payout = Math.floor(betAmount * 1.5);
+    } else if (playerBJ && dealerBJ) {
+        resultType = 'PUSH';
+        payout = 0;
+    } else if (dScore > 21) {
+        resultType = 'WIN';
+        payout = betAmount;
+    } else if (pScore > dScore) {
+        resultType = 'WIN';
+        payout = betAmount;
+    } else if (pScore < dScore) {
+        resultType = 'LOSE';
+        payout = -betAmount;
+    } else {
+        resultType = 'PUSH';
+        payout = 0;
+    }
+ 
+    return { resultType, payout, pScore, dScore };
+}
+ 
+function resultLabel(resultType) {
+    switch (resultType) {
+        case 'BLACKJACK': return '🃏 블랙잭!';
+        case 'WIN': return '🏆 승리!';
+        case 'LOSE': return '💸 패배';
+        case 'PUSH': return '🤝 푸시(무승부)';
+        case 'BUST': return '💥 버스트(21 초과)';
+        default: return resultType;
+    }
+}
 // ───────────────────────────────────────────────
 // 6. 총자산 계산
 // ───────────────────────────────────────────────
@@ -1014,6 +1152,156 @@ if (command === '!숫자맞추기취소') {
     delete numberGuessSessions[room];
     return reply('🛑 [숫자맞추기 취소] 게임이 종료되었습니다.');
 }
+if (command === '!블랙잭') {
+    if (blackjackSessions[room]) return reply('⚠️ 이미 진행 중인 블랙잭이 있습니다. !히트 / !스탠드 로 진행하세요.');
+    if (args.length < 1) return reply('❌ 양식: !블랙잭 [배팅액]\n예: !블랙잭 5000');
+ 
+    const betAmount = parseInt(args[0], 10);
+    if (Number.isNaN(betAmount) || betAmount <= 0) return reply('❌ 배팅 금액이 올바르지 않습니다.');
+    if (user.points < betAmount) return reply(`❌ 잔액 부족. 보유: ${user.points.toLocaleString()}P`);
+ 
+    const playerHand = [drawBlackjackCard(), drawBlackjackCard()];
+    const dealerHand = [drawBlackjackCard(), drawBlackjackCard()];
+ 
+    // 배팅액은 선차감 (더블다운/스플릿 시 추가 차감)
+    user.points -= betAmount;
+    saveData(db);
+ 
+    const canSplit = playerHand[0].rank === playerHand[1].rank;
+ 
+    blackjackSessions[room] = {
+        player: sender,
+        bet: betAmount,
+        hands: [{ cards: playerHand, doubled: false, done: false }],
+        activeHandIdx: 0,
+        dealerHand,
+        canFirstAction: true, // 더블다운/스플릿은 각 핸드의 "첫 행동"에서만 가능
+        finished: false
+    };
+ 
+    const pScore = calcHandValue(playerHand);
+    let msg =
+        `🃏 [블랙잭 시작] (배팅 ${betAmount.toLocaleString()}P)\n` +
+        `👤 ${sender}님의 패: ${handDisplay(playerHand)} (${pScore})\n` +
+        `🤖 딜러 패: ${cardDisplay(dealerHand[0])} 🂠 (1장 비공개)\n\n`;
+ 
+    if (isBlackjack(playerHand)) {
+        // 즉시 딜러 비교 (블랙잭은 추가 행동 없음)
+        const dealerBJ = isBlackjack(dealerHand);
+        const judged = judgeOneHand(playerHand, dealerHand, betAmount, false);
+        user.points += betAmount + judged.payout;
+        saveData(db);
+        delete blackjackSessions[room];
+        return reply(
+            msg +
+            `🤖 딜러 패 공개: ${handDisplay(dealerHand)} (${judged.dScore})\n` +
+            `──────────────────\n` +
+            `${resultLabel(judged.resultType)} ${judged.payout >= 0 ? '+' : ''}${judged.payout.toLocaleString()}P\n` +
+            `💰 내 지갑: ${user.points.toLocaleString()}P`
+        );
+    }
+ 
+    msg += `💵 !히트 (한 장 더) / !스탠드 (멈추기)`;
+    if (betAmount <= (user.points)) msg += ` / !더블다운 (배팅 2배+카드 1장)`;
+    if (canSplit) msg += ` / !스플릿 (같은 패 분할)`;
+ 
+    return reply(msg);
+}
+ 
+// ── 블랙잭: 히트 ───────────────────────────
+if (command === '!히트') {
+    const session = blackjackSessions[room];
+    if (!session || session.player !== sender) return;
+ 
+    const hand = session.hands[session.activeHandIdx];
+    if (!hand || hand.done) return reply('❌ 이미 종료된 패입니다.');
+ 
+    hand.cards.push(drawBlackjackCard());
+    session.canFirstAction = false; // 히트 이후엔 더블다운/스플릿 불가
+    const score = calcHandValue(hand.cards);
+ 
+    let msg = `🃏 [히트] ${session.hands.length > 1 ? `(${session.activeHandIdx + 1}번째 패) ` : ''}${handDisplay(hand.cards)} (${score})\n`;
+ 
+    if (score >= 21) {
+        hand.done = true;
+        msg += score > 21 ? '💥 버스트! 자동으로 다음 단계로 넘어갑니다.\n' : '✨ 21입니다! 자동 스탠드.\n';
+        return reply(msg + advanceBlackjack(db, room, sender));
+    }
+ 
+    msg += '💵 !히트 / !스탠드 로 계속하세요.';
+    saveData(db);
+    return reply(msg);
+}
+ 
+// ── 블랙잭: 스탠드 ─────────────────────────
+if (command === '!스탠드') {
+    const session = blackjackSessions[room];
+    if (!session || session.player !== sender) return;
+ 
+    const hand = session.hands[session.activeHandIdx];
+    if (!hand || hand.done) return reply('❌ 이미 종료된 패입니다.');
+ 
+    hand.done = true;
+    return reply(`🛑 [스탠드] ${handDisplay(hand.cards)} (${calcHandValue(hand.cards)})\n` + advanceBlackjack(db, room, sender));
+}
+ 
+// ── 블랙잭: 더블다운 ───────────────────────
+if (command === '!더블다운') {
+    const session = blackjackSessions[room];
+    if (!session || session.player !== sender) return;
+    if (!session.canFirstAction) return reply('❌ 더블다운은 첫 행동에서만 가능합니다.');
+ 
+    const hand = session.hands[session.activeHandIdx];
+    if (!hand || hand.done) return reply('❌ 이미 종료된 패입니다.');
+    if (user.points < session.bet) return reply(`❌ 더블다운에 필요한 자금이 부족합니다. (추가 ${session.bet.toLocaleString()}P 필요)`);
+ 
+    user.points -= session.bet;
+    hand.doubled = true;
+    hand.cards.push(drawBlackjackCard());
+    hand.done = true; // 더블다운은 카드 한 장 받고 자동 스탠드
+    session.canFirstAction = false;
+ 
+    const score = calcHandValue(hand.cards);
+    let msg = `💰 [더블다운] 배팅액이 ${session.bet.toLocaleString()}P 추가되어 총 ${(session.bet * 2).toLocaleString()}P!\n` +
+        `🃏 ${handDisplay(hand.cards)} (${score})${score > 21 ? ' 💥 버스트!' : ''}\n`;
+ 
+    saveData(db);
+    return reply(msg + advanceBlackjack(db, room, sender));
+}
+ 
+// ── 블랙잭: 스플릿 ─────────────────────────
+if (command === '!스플릿') {
+    const session = blackjackSessions[room];
+    if (!session || session.player !== sender) return;
+    if (!session.canFirstAction || session.hands.length > 1) return reply('❌ 스플릿은 게임 시작 직후 한 번만 가능합니다.');
+ 
+    const hand = session.hands[0];
+    if (hand.cards.length !== 2 || hand.cards[0].rank !== hand.cards[1].rank) {
+        return reply('❌ 같은 숫자 2장일 때만 스플릿할 수 있습니다.');
+    }
+    if (user.points < session.bet) return reply(`❌ 스플릿에 필요한 자금이 부족합니다. (추가 ${session.bet.toLocaleString()}P 필요)`);
+ 
+    user.points -= session.bet; // 두 번째 패를 위한 배팅액 추가 차감
+    saveData(db);
+ 
+    const card1 = hand.cards[0];
+    const card2 = hand.cards[1];
+ 
+    session.hands = [
+        { cards: [card1, drawBlackjackCard()], doubled: false, done: false },
+        { cards: [card2, drawBlackjackCard()], doubled: false, done: false }
+    ];
+    session.activeHandIdx = 0;
+    session.canFirstAction = true; // 스플릿된 각 패에서도 더블다운은 한 번씩 가능
+ 
+    const h1 = session.hands[0];
+    return reply(
+        `✂️ [스플릿 완료] 배팅액이 ${session.bet.toLocaleString()}P 추가되어 총 ${(session.bet * 2).toLocaleString()}P (각 패당 ${session.bet.toLocaleString()}P)\n\n` +
+        `🃏 [1번째 패] ${handDisplay(h1.cards)} (${calcHandValue(h1.cards)})\n` +
+        `💵 !히트 / !스탠드 / !더블다운 으로 1번째 패를 먼저 진행하세요.`
+    );
+}
+
 
         if (currentQuiz && content.includes(currentQuiz.a)) {
             if (quizTimer) { clearTimeout(quizTimer); quizTimer = null; }
