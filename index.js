@@ -114,6 +114,7 @@ let LUXURY_MARKET = {};
 let COIN_MARKET = {};
 const gameSessions = {};
 let horseRace = null;
+let numberGuessSessions = {};
 let currentQuiz = null;
 let quizTimer = null;
 let activeQuizRooms = [];
@@ -237,6 +238,10 @@ function evaluateHand(p1, p2) {
     if (kkut === 9) return { score: 1009, name: '갑오(9끗)' };
     if (kkut === 0) return { score: 1000, name: '망통(0끗)' };
     return { score: 1000 + kkut, name: `${kkut}끗` };
+}
+function getNumberGuessMultiplier(n) {
+    // 배율 = N × 0.83 (소수점 둘째자리까지)
+    return Math.round(n * 0.83 * 100) / 100;
 }
 
 // ───────────────────────────────────────────────
@@ -942,6 +947,73 @@ server.on('message', (msg, rinfo) => {
             horseRace = null;
             return reply(buildRaceBoard(result) + payoutMsg + `\n\n🍯 총 판돈: ${potSnapshot.toLocaleString()}P`);
         }
+
+        if (command === '!숫자맞추기') {
+    if (numberGuessSessions[room]) return reply('⚠️ 이미 진행 중인 숫자맞추기가 있습니다. !숫자배팅 [금액] [숫자] 로 참여하세요.');
+    if (args.length < 1) return reply('❌ 양식: !숫자맞추기 [개수(3~8)]\n예: !숫자맞추기 8');
+ 
+    const n = parseInt(args[0], 10);
+    if (Number.isNaN(n) || n < 3 || n > 8) return reply('❌ 개수는 3 ~ 8 사이로 입력해주세요.');
+ 
+    const multiplier = getNumberGuessMultiplier(n);
+    numberGuessSessions[room] = { range: n, multiplier, host: sender };
+ 
+    return reply(
+        `🔢 [숫자맞추기 게임 개설]\n` +
+        `👤 개설자: ${sender}\n` +
+        `🎯 범위: 1 ~ ${n}\n` +
+        `💰 배율: ${multiplier}배\n\n` +
+        `💵 !숫자배팅 [금액] [숫자] 로 참여하세요!\n` +
+        `예: !숫자배팅 5000 ${Math.ceil(n / 2)}`
+    );
+}
+ 
+// ── 숫자맞추기: 배팅 + 숫자 선택 → 즉시 정산 ──
+if (command === '!숫자배팅') {
+    const session = numberGuessSessions[room];
+    if (!session) return reply('❌ 진행 중인 숫자맞추기가 없습니다. !숫자맞추기 [개수] 로 시작하세요.');
+    if (args.length < 2) return reply('❌ 양식: !숫자배팅 [금액] [숫자]\n예: !숫자배팅 5000 5');
+ 
+    const betAmount = parseInt(args[0], 10);
+    const guess = parseInt(args[1], 10);
+ 
+    if (Number.isNaN(betAmount) || betAmount <= 0) return reply('❌ 배팅 금액이 올바르지 않습니다.');
+    if (user.points < betAmount) return reply(`❌ 잔액 부족. 보유: ${user.points.toLocaleString()}P`);
+    if (Number.isNaN(guess) || guess < 1 || guess > session.range) {
+        return reply(`❌ 숫자는 1 ~ ${session.range} 사이로 입력해주세요.`);
+    }
+ 
+    const answer = Math.floor(Math.random() * session.range) + 1;
+    const isWin = guess === answer;
+ 
+    let resultMsg = `🔢 [숫자맞추기 결과]\n` +
+        `🎯 범위: 1 ~ ${session.range}\n` +
+        `🤔 ${sender}님의 선택: ${guess}\n` +
+        `🎲 정답: ${answer}\n` +
+        `──────────────────\n`;
+ 
+    if (isWin) {
+        const payout = Math.floor(betAmount * session.multiplier);
+        user.points += payout - betAmount; // 배팅액 제외하고 순수익만 가감 (배팅액은 이미 차감 안 했으므로 순이익만 더함)
+        resultMsg += `🏆 정답입니다! 배율 ${session.multiplier}배 적용\n💵 획득: +${payout.toLocaleString()}P`;
+    } else {
+        user.points -= betAmount;
+        resultMsg += `💸 아쉽네요, 틀렸습니다.\n💵 손실: -${betAmount.toLocaleString()}P`;
+    }
+ 
+    saveData(db);
+    delete numberGuessSessions[room]; // 1회성 — 정산 후 게임판 자동 종료
+    return reply(`${resultMsg}\n💰 내 지갑: ${user.points.toLocaleString()}P`);
+}
+ 
+// ── 숫자맞추기: 취소 (개설자만) ────────────
+if (command === '!숫자맞추기취소') {
+    const session = numberGuessSessions[room];
+    if (!session) return reply('❌ 진행 중인 숫자맞추기가 없습니다.');
+    if (session.host !== sender) return reply('❌ 개설자만 취소할 수 있습니다.');
+    delete numberGuessSessions[room];
+    return reply('🛑 [숫자맞추기 취소] 게임이 종료되었습니다.');
+}
 
         if (currentQuiz && content.includes(currentQuiz.a)) {
             if (quizTimer) { clearTimeout(quizTimer); quizTimer = null; }
