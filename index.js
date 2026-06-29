@@ -1,6 +1,6 @@
 'use strict';
 
-// index.js — 타짜 카카오봇 UDP 매칭 엔진 (정리/버그픽스 버전)
+// index.js — 타짜 카카오봇 UDP 매칭 엔진 (v2: 번호구매/초고가 명품/직원 시스템)
 const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
@@ -24,15 +24,32 @@ const ITEM_SHOP = {
     '고광렬의입담': { price: 500, type: '타이틀', desc: '단톡방 화려한 말빨 장착' }
 };
 
+// 단위: P (포인트). 만=10,000 / 억=100,000,000 / 조=1,000,000,000,000
+const MAN = 10000;
+const EOK = 100000000;
+const JO = 1000000000000;
+
 const DEFAULT_LUXURY = {
-    '페라리_SF90_스트라달레': { basePrice: 60000, currentPrice: 60000, type: '하이퍼카' },
-    '포르쉐_911_GT3_RS': { basePrice: 35000, currentPrice: 35000, type: '스포츠카' },
-    '람보르기니_우루스_퍼포만테': { basePrice: 28000, currentPrice: 28000, type: '슈퍼SUV' },
-    '롤렉스_서브마리너_데이트': { basePrice: 15000, currentPrice: 15000, type: '명품시계' },
-    '오데마피게_로열오크_크로노': { basePrice: 45000, currentPrice: 45000, type: '하이퍼시계' },
-    '한강뷰_신축빌라': { basePrice: 1000000, currentPrice: 1000000, type: '빌라' },
-    '양평_전원주택': { basePrice: 4000000, currentPrice: 4000000, type: '전원주택' },
-    '강남_타워팰리스_아파트': { basePrice: 8000000, currentPrice: 8000000, type: '아파트' }
+    '롤렉스_서브마리너': { basePrice: 1500 * MAN, currentPrice: 1500 * MAN, type: '명품시계' },
+    '오데마피게_로열오크': { basePrice: 4500 * MAN, currentPrice: 4500 * MAN, type: '하이퍼시계' },
+    '포르쉐_911_GT3RS': { basePrice: Math.round(3.5 * EOK), currentPrice: Math.round(3.5 * EOK), type: '스포츠카' },
+    '람보르기니_우루스': { basePrice: Math.round(2.8 * EOK), currentPrice: Math.round(2.8 * EOK), type: '슈퍼SUV' },
+    '페라리_SF90': { basePrice: 6 * EOK, currentPrice: 6 * EOK, type: '하이퍼카' },
+    '테슬라_모델X': { basePrice: Math.round(1.5 * EOK), currentPrice: Math.round(1.5 * EOK), type: '전기차' },
+    '부가티_시론': { basePrice: 40 * EOK, currentPrice: 40 * EOK, type: '하이퍼카' },
+    '한강뷰_신축빌라': { basePrice: 100 * EOK, currentPrice: 100 * EOK, type: '빌라' },
+    '양평_전원주택': { basePrice: 400 * EOK, currentPrice: 400 * EOK, type: '전원주택' },
+    '강남_타워팰리스': { basePrice: 800 * EOK, currentPrice: 800 * EOK, type: '아파트' },
+    '개인전용기_걸프스트림': { basePrice: Math.round(0.15 * JO), currentPrice: Math.round(0.15 * JO), type: '전용기' },
+    '초호화요트_아주레': { basePrice: Math.round(0.3 * JO), currentPrice: Math.round(0.3 * JO), type: '요트' },
+    '샹보르엠무파라드_성': { basePrice: Math.round(1.5 * JO), currentPrice: Math.round(1.5 * JO), type: '성/대저택' },
+    '맨해튼_스카이스크래퍼': { basePrice: 3 * JO, currentPrice: 3 * JO, type: '빌딩' },
+    '사설섬_프라이빗아일랜드': { basePrice: 5 * JO, currentPrice: 5 * JO, type: '섬' },
+    '스페이스X': { basePrice: 10 * JO, currentPrice: 10 * JO, type: '우주기업' },
+    '글로벌은행_지분': { basePrice: 25 * JO, currentPrice: 25 * JO, type: '금융기업' },
+    '대륙급_광산기업': { basePrice: 50 * JO, currentPrice: 50 * JO, type: '자원기업' },
+    '세계최대_반도체기업': { basePrice: 80 * JO, currentPrice: 80 * JO, type: '반도체기업' },
+    '달표면_채굴권': { basePrice: 100 * JO, currentPrice: 100 * JO, type: '우주자산' }
 };
 
 const DEFAULT_COIN = {
@@ -41,12 +58,30 @@ const DEFAULT_COIN = {
     '정재코인': { currentPrice: 100, lastPrice: 100, desc: '상장폐지 위험 잡코인' }
 };
 
+// 직원(알바) 목록 — hirePrice: 영입 가격, perMinute: 분당 수익(P)
+const EMPLOYEE_SHOP = {
+    '박장호': { hirePrice: 500 * MAN, perMinute: 5000, desc: '평범한 알바생' },
+    '박성빈': { hirePrice: 3000 * MAN, perMinute: 30000, desc: '성실한 직원' },
+    '임정재': { hirePrice: Math.round(1.2 * EOK), perMinute: 120000, desc: '능력있는 매니저' },
+    '조호근': { hirePrice: 5 * EOK, perMinute: 500000, desc: '베테랑 임원' },
+    '워렌버핏': { hirePrice: 1 * JO, perMinute: 10000000, desc: '투자의 귀재' },
+    '일론머스크': { hirePrice: 5 * JO, perMinute: 10000000, desc: '괴짜 천재 사업가 (1분당 1000만P)' }
+};
+
 const DECK = [
     { m: 1, name: '1광' }, { m: 1, name: '1피' }, { m: 2, name: '2열' }, { m: 2, name: '2피' },
     { m: 3, name: '3광' }, { m: 3, name: '3피' }, { m: 4, name: '4열' }, { m: 4, name: '4피' },
     { m: 5, name: '5열' }, { m: 5, name: '5피' }, { m: 6, name: '6열' }, { m: 6, name: '6피' },
     { m: 7, name: '7열' }, { m: 7, name: '7피' }, { m: 8, name: '8광' }, { m: 8, name: '8열' },
     { m: 9, name: '9열' }, { m: 9, name: '9피' }, { m: 10, name: '10열' }, { m: 10, name: '10피' }
+];
+
+const HORSES = [
+    { no: 1, name: '아귀호' },
+    { no: 2, name: '곤이호' },
+    { no: 3, name: '평경장호' },
+    { no: 4, name: '고광렬호' },
+    { no: 5, name: '정마담호' }
 ];
 
 const NEWS_POOL = {
@@ -110,8 +145,15 @@ function loadMarket() {
     try {
         if (fs.existsSync(MARKET_FILE)) {
             const data = JSON.parse(fs.readFileSync(MARKET_FILE, 'utf8'));
-            LUXURY_MARKET = (data && data.luxury) ? data.luxury : JSON.parse(JSON.stringify(DEFAULT_LUXURY));
-            COIN_MARKET = (data && data.coin) ? data.coin : JSON.parse(JSON.stringify(DEFAULT_COIN));
+            LUXURY_MARKET = (data && data.luxury) ? data.luxury : {};
+            COIN_MARKET = (data && data.coin) ? data.coin : {};
+            for (const [k, v] of Object.entries(DEFAULT_LUXURY)) {
+                if (!LUXURY_MARKET[k]) LUXURY_MARKET[k] = JSON.parse(JSON.stringify(v));
+            }
+            for (const [k, v] of Object.entries(DEFAULT_COIN)) {
+                if (!COIN_MARKET[k]) COIN_MARKET[k] = JSON.parse(JSON.stringify(v));
+            }
+            saveMarket();
             return;
         }
     } catch (e) {
@@ -131,8 +173,7 @@ function saveMarket() {
 }
 
 // ───────────────────────────────────────────────
-// 4. 유저 레코드 정규화  ← 이번 크래시의 핵심 수정
-//    어떤 형태로 저장돼 있든 항상 정상 객체를 보장한다.
+// 4. 유저 레코드 정규화
 // ───────────────────────────────────────────────
 function createDefaultUser() {
     return {
@@ -140,12 +181,12 @@ function createDefaultUser() {
         lastCheckIn: '',
         items: [],
         luxuries: {},
-        coins: { '성빈코인': 0, '호근코인': 0, '정재코인': 0 }
+        coins: { '성빈코인': 0, '호근코인': 0, '정재코인': 0 },
+        employees: {}
     };
 }
 
 function ensureUser(db, name) {
-    // hasOwnProperty 로 검사해서 constructor/toString 같은 상속 속성을 유저로 오인하지 않게 함
     let u = Object.prototype.hasOwnProperty.call(db, name) ? db[name] : null;
 
     if (!u || typeof u !== 'object' || Array.isArray(u)) {
@@ -156,6 +197,7 @@ function ensureUser(db, name) {
     if (!Array.isArray(u.items)) u.items = [];
     if (!u.luxuries || typeof u.luxuries !== 'object' || Array.isArray(u.luxuries)) u.luxuries = {};
     if (!u.coins || typeof u.coins !== 'object' || Array.isArray(u.coins)) u.coins = {};
+    if (!u.employees || typeof u.employees !== 'object' || Array.isArray(u.employees)) u.employees = {};
     for (const c of COIN_NAMES) {
         if (typeof u.coins[c] !== 'number' || Number.isNaN(u.coins[c])) u.coins[c] = 0;
     }
@@ -196,17 +238,48 @@ function evaluateHand(p1, p2) {
     if (kkut === 0) return { score: 1000, name: '망통(0끗)' };
     return { score: 1000 + kkut, name: `${kkut}끗` };
 }
-// ───────────────────────────────────────────────
-//  경마 (PvP 파리뮤추얼 베팅)
-// ───────────────────────────────────────────────
-const HORSES = [
-    { no: 1, name: '아귀호' },
-    { no: 2, name: '곤이호' },
-    { no: 3, name: '평경장호' },
-    { no: 4, name: '고광렬호' },
-    { no: 5, name: '정마담호' }
-];
 
+// ───────────────────────────────────────────────
+// 6. 총자산 계산
+// ───────────────────────────────────────────────
+function calcEmployeeEarning(emp, hiredAt, now) {
+    const minutesElapsed = Math.max(0, (now - hiredAt) / 60000);
+    return Math.floor(minutesElapsed * emp.perMinute);
+}
+
+function calcNetWorth(user) {
+    let luxuryValue = 0;
+    for (const [name, count] of Object.entries(user.luxuries || {})) {
+        if (count > 0 && LUXURY_MARKET[name]) {
+            luxuryValue += LUXURY_MARKET[name].currentPrice * count;
+        }
+    }
+    let coinValue = 0;
+    for (const [name, qty] of Object.entries(user.coins || {})) {
+        if (qty > 0 && COIN_MARKET[name]) {
+            coinValue += COIN_MARKET[name].currentPrice * qty;
+        }
+    }
+    let employeeEarning = 0;
+    const now = Date.now();
+    for (const [name, info] of Object.entries(user.employees || {})) {
+        const emp = EMPLOYEE_SHOP[name];
+        if (emp && info && typeof info.hiredAt === 'number') {
+            employeeEarning += calcEmployeeEarning(emp, info.hiredAt, now);
+        }
+    }
+    return {
+        cash: user.points,
+        luxuryValue,
+        coinValue,
+        employeeEarning,
+        total: user.points + luxuryValue + coinValue + employeeEarning
+    };
+}
+
+// ───────────────────────────────────────────────
+// 7. 경마 로직
+// ───────────────────────────────────────────────
 function runHorseRace() {
     const TRACK = 24;
     const dist = HORSES.map(() => 0);
@@ -214,7 +287,7 @@ function runHorseRace() {
     while (!finished && ticks < 300) {
         ticks++;
         for (let i = 0; i < HORSES.length; i++) {
-            dist[i] += Math.floor(Math.random() * 4); // 칸당 0~3 전진
+            dist[i] += Math.floor(Math.random() * 4);
             if (dist[i] >= TRACK) finished = true;
         }
     }
@@ -236,21 +309,23 @@ function buildRaceBoard(result) {
     board += `\n🏆 우승마: [ ${ranked[0].horse.no}번 ${ranked[0].horse.name} ] 🏆`;
     return board;
 }
+
 // ───────────────────────────────────────────────
-// 6. 무작위 기습 이벤트 (뉴스 / 퀴즈)
+// 8. 무작위 기습 이벤트
 // ───────────────────────────────────────────────
 function buildNewsReport() {
     const targetCoin = COIN_NAMES[Math.floor(Math.random() * COIN_NAMES.length)];
-    const isUpNext = Math.random() > 0.4;
+    const isUpNext = Math.random() > 0.5;
     const pool = isUpNext ? NEWS_POOL[targetCoin].up : NEWS_POOL[targetCoin].down;
     const news = pool[Math.floor(Math.random() * pool.length)];
 
-    // 명품 시세 변동
     for (const key in LUXURY_MARKET) {
         const change = (Math.random() * 0.40) - 0.20;
         let nPrice = Math.floor(LUXURY_MARKET[key].currentPrice * (1 + change));
         const floor = Math.floor(LUXURY_MARKET[key].basePrice * 0.4);
+        const cap = Math.floor(LUXURY_MARKET[key].basePrice * 2.5);
         if (nPrice < floor) nPrice = floor;
+        if (nPrice > cap) nPrice = cap;
         LUXURY_MARKET[key].currentPrice = nPrice;
     }
 
@@ -278,7 +353,58 @@ function buildQuiz() {
 }
 
 // ───────────────────────────────────────────────
-// 7. 서버
+// 9. 번호 ↔ 이름 매핑 헬퍼
+// ───────────────────────────────────────────────
+function getLuxuryList() {
+    return Object.entries(LUXURY_MARKET);
+}
+
+function resolveLuxuryName(arg) {
+    const list = getLuxuryList();
+    if (/^\d+$/.test(arg)) {
+        const idx = parseInt(arg, 10) - 1;
+        if (idx >= 0 && idx < list.length) return list[idx][0];
+        return null;
+    }
+    return LUXURY_MARKET[arg] ? arg : null;
+}
+
+function getEmployeeShopList() {
+    return Object.entries(EMPLOYEE_SHOP);
+}
+
+function resolveEmployeeName(arg) {
+    const list = getEmployeeShopList();
+    if (/^\d+$/.test(arg)) {
+        const idx = parseInt(arg, 10) - 1;
+        if (idx >= 0 && idx < list.length) return list[idx][0];
+        return null;
+    }
+    return EMPLOYEE_SHOP[arg] ? arg : null;
+}
+
+function resolveOwnedEmployeeName(user, arg) {
+    const ownedNames = Object.keys(user.employees || {});
+    if (/^\d+$/.test(arg)) {
+        const idx = parseInt(arg, 10) - 1;
+        if (idx >= 0 && idx < ownedNames.length) return ownedNames[idx];
+        return null;
+    }
+    return ownedNames.includes(arg) ? arg : null;
+}
+
+function resolveItemShopName(arg) {
+    const list = Object.entries(ITEM_SHOP);
+    if (/^\d+$/.test(arg)) {
+        const idx = parseInt(arg, 10) - 1;
+        if (idx >= 0 && idx < list.length) return list[idx][0];
+        return null;
+    }
+    return ITEM_SHOP[arg] ? arg : null;
+}
+
+// ───────────────────────────────────────────────
+// 10. 서버
 // ───────────────────────────────────────────────
 server.on('listening', () => {
     loadMarket();
@@ -290,7 +416,6 @@ server.on('error', (err) => {
 });
 
 server.on('message', (msg, rinfo) => {
-    // 1) 메시지 파싱 (깨진 패킷은 조용히 무시)
     let data;
     try {
         data = JSON.parse(msg.toString('utf-8'));
@@ -303,14 +428,12 @@ server.on('message', (msg, rinfo) => {
     const sender = data.sender;
     const content = (data.msg == null ? '' : String(data.msg)).trim();
 
-    // 닉네임이나 내용이 비어있으면 처리하지 않음
-    if (!sender || !content) return;
+    if (!sender || !content || room == null) return;
 
     try {
         const db = loadData();
         const user = ensureUser(db, sender);
 
-        // 응답 헬퍼 (뉴스/퀴즈 기습 이벤트 부착)
         const reply = (text) => {
             let out = String(text);
             if (activeNewsRooms.includes(room) && Math.random() < 0.15) out += buildNewsReport();
@@ -319,12 +442,10 @@ server.on('message', (msg, rinfo) => {
             server.send(buf, 0, buf.length, rinfo.port, rinfo.address);
         };
 
-        // 명령어는 '첫 단어' 기준으로 정확히 매칭 (includes 중첩 버그 제거)
         const parts = content.split(/\s+/);
         const command = parts[0];
         const args = parts.slice(1);
 
-        // ── 기습 이벤트 ON/OFF ─────────────────────
         if (command === '!퀴즈켜기') {
             if (!activeQuizRooms.includes(room)) activeQuizRooms.push(room);
             return reply('🚨 [기습 퀴즈 활성화 완료]');
@@ -342,27 +463,27 @@ server.on('message', (msg, rinfo) => {
             return reply('🎴 [경제 뉴스 비활성화 완료]');
         }
 
-        // ── 도움말 ────────────────────────────────
         if (command === '!도움말') {
             return reply(
                 '📜 [종합 가이드 북]\n\n' +
                 '🎰 [1. 기본 및 섯다]\n ➔ !출석, !지갑, !정보, !섯다, !바꾸기, !배팅 [금액]\n\n' +
-                '🛒 [2. 만물 상점]\n ➔ !상점 (장비 및 하이퍼카 라인업)\n\n' +
+                '🛒 [2. 만물 상점]\n ➔ !상점 (번호로 표시)\n ➔ !구매 [번호 or 이름], !판매 [번호 or 이름]\n ➔ !모두팔기 : 보유 사치품 일괄 매각\n\n' +
                 '📈 [3. 월스트리트 거래소]\n' +
                 ' ➔ !시세 : 명품 및 코인 변동 호가 확인\n' +
-                ' ➔ !구매 [모델명], !판매 [모델명]\n' +
                 ' ➔ !매수 [코인명] [수량], !매도 [코인명] [수량]\n' +
                 ' ➔ !송금 [닉네임] [금액] : 금융 이체\n\n' +
-                '🔔 [4. 무작위 기습 제어]\n ➔ !퀴즈켜기 / !퀴즈끄기\n ➔ !뉴스켜기 / !뉴스끄기'
+                '📊 [4. 자산 & 랭킹]\n ➔ !지갑 (총자산 포함 조회)\n ➔ !랭킹 : 전체 자산 순위 TOP 10\n\n' +
+                '👔 [5. 직원 채용]\n ➔ !알바상점 : 채용 가능한 직원 목록\n ➔ !알바영입 [번호 or 이름]\n ➔ !알바 : 보유 직원 및 미정산 수익 확인\n ➔ !알바출금 : 누적 수익 전액 정산\n ➔ !알바판매 [번호 or 이름] : 해고(퇴직금 90% 환급)\n\n' +
+                '🐎 [6. 경마 베팅]\n ➔ !경마시작, !경마베팅 [말번호] [금액]\n ➔ !경마현황, !경마출발, !경마취소\n\n' +
+                '🔔 [7. 무작위 기습 제어]\n ➔ !퀴즈켜기 / !퀴즈끄기\n ➔ !뉴스켜기 / !뉴스끄기'
             );
         }
 
-        // ── 시세판 ────────────────────────────────
         if (command === '!시세') {
             let mMsg = '📊 [실시간 금융 거래소 시세판]\n\n🏎️ [1. 사치품 호가]\n';
-            for (const [name, info] of Object.entries(LUXURY_MARKET)) {
-                mMsg += `➔ ${name}: ${info.currentPrice.toLocaleString()}P\n`;
-            }
+            getLuxuryList().forEach(([name, info], idx) => {
+                mMsg += `${idx + 1}. ${name}: ${info.currentPrice.toLocaleString()}P\n`;
+            });
             mMsg += '\n📈 [2. 가상자산 코인 시세]\n';
             for (const [name, info] of Object.entries(COIN_MARKET)) {
                 const diff = info.currentPrice - info.lastPrice;
@@ -371,20 +492,18 @@ server.on('message', (msg, rinfo) => {
             return reply(mMsg);
         }
 
-        // ── 상점 ──────────────────────────────────
         if (command === '!상점') {
-            let shopMsg = '🛒 [타짜의 만물 상점]\n\n🎯 [1. 전문 장비 매장]\n';
-            for (const [name, info] of Object.entries(ITEM_SHOP)) {
-                shopMsg += `➔ !구매 ${name} (${info.price.toLocaleString()}P)\n   ㄴ ${info.desc}\n`;
-            }
-            shopMsg += '\n🏎️ [2. 최고급 하이퍼카 매장]\n';
-            for (const [name, info] of Object.entries(LUXURY_MARKET)) {
-                shopMsg += `➔ !구매 ${name} (${info.currentPrice.toLocaleString()}P)\n`;
-            }
+            let shopMsg = '🛒 [타짜의 만물 상점]\n\n🎯 [1. 전문 장비 매장] (!구매 번호)\n';
+            Object.entries(ITEM_SHOP).forEach(([name, info], idx) => {
+                shopMsg += `${idx + 1}. ${name} (${info.price.toLocaleString()}P)\n   ㄴ ${info.desc}\n`;
+            });
+            shopMsg += '\n🏎️ [2. 명품/차량/자산 매장] (!구매 번호)\n';
+            getLuxuryList().forEach(([name, info], idx) => {
+                shopMsg += `${idx + 1}. ${name} [${info.type}] (${info.currentPrice.toLocaleString()}P)\n`;
+            });
             return reply(shopMsg);
         }
 
-        // ── 출석체크 ──────────────────────────────
         if (command === '!출석') {
             const today = new Date().toISOString().split('T')[0];
             if (user.lastCheckIn === today) return reply('⚠️ 오늘 이미 출석했습니다.');
@@ -394,7 +513,6 @@ server.on('message', (msg, rinfo) => {
             return reply(`🎉 [출석 정착금 지급]\n💵 지급 금액: +1,000P\n💰 보유 잔액: ${user.points.toLocaleString()}P`);
         }
 
-        // ── 지갑 / 정보 ───────────────────────────
         if (command === '!지갑' || command === '!정보') {
             const items = user.items.length > 0 ? user.items.join(', ') : '없음';
             const luxList = [];
@@ -403,18 +521,47 @@ server.on('message', (msg, rinfo) => {
             }
             const luxDisplay = luxList.length > 0 ? luxList.join(', ') : '없음';
             const coinDisplay = `🪙 성빈: ${user.coins['성빈코인'].toLocaleString()}개 | 호근: ${user.coins['호근코인'].toLocaleString()}개 | 정재: ${user.coins['정재코인'].toLocaleString()}개`;
+            const empNames = Object.keys(user.employees || {});
+            const empDisplay = empNames.length > 0 ? empNames.join(', ') : '없음';
+            const nw = calcNetWorth(user);
             return reply(
                 `💰 [${sender}님의 종합 자산 정보창]\n` +
                 `현금 잔고: ${user.points.toLocaleString()}P\n` +
                 '─────────────────────\n' +
                 `🛠 장비: [ ${items} ]\n` +
                 `👑 명품: [ ${luxDisplay} ]\n` +
+                `👔 직원: [ ${empDisplay} ]\n` +
                 '─────────────────────\n' +
-                coinDisplay
+                coinDisplay + '\n' +
+                '─────────────────────\n' +
+                `📊 명품 시세가치: ${nw.luxuryValue.toLocaleString()}P\n` +
+                `📊 코인 시세가치: ${nw.coinValue.toLocaleString()}P\n` +
+                `👔 직원 미정산 수익: ${nw.employeeEarning.toLocaleString()}P (!알바출금으로 받기)\n` +
+                `💎 총 자산: ${nw.total.toLocaleString()}P`
             );
         }
 
-        // ── 송금 ──────────────────────────────────
+        if (command === '!랭킹' || command === '!자산랭킹') {
+            const allNames = Object.keys(db).filter(name => userExists(db, name));
+            if (allNames.length === 0) return reply('❌ 등록된 유저가 없습니다.');
+
+            const ranked = allNames
+                .map(name => {
+                    const u = ensureUser(db, name);
+                    return { name, nw: calcNetWorth(u) };
+                })
+                .sort((a, b) => b.nw.total - a.nw.total)
+                .slice(0, 10);
+
+            const medals = ['🥇', '🥈', '🥉'];
+            let board = '🏆 [실시간 총자산 랭킹 TOP 10]\n─────────────────────\n';
+            ranked.forEach((row, idx) => {
+                const medal = medals[idx] || `${idx + 1}.`;
+                board += `${medal} ${row.name} : ${row.nw.total.toLocaleString()}P\n`;
+            });
+            return reply(board);
+        }
+
         if (command === '!송금') {
             if (args.length < 2) return reply('❌ !송금 닉네임 금액');
             const receiverName = args[0];
@@ -432,47 +579,73 @@ server.on('message', (msg, rinfo) => {
             return reply(`💸 [송금 완료]\n💵 이체 금액: -${sendAmount.toLocaleString()}P\n👤 대상: ${receiverName}님\n💰 내 잔액: ${user.points.toLocaleString()}P`);
         }
 
-        // ── 아이템 / 차량 구매·판매 ───────────────
+        if (command === '!모두팔기' || command === '!전체판매') {
+            const owned = Object.entries(user.luxuries).filter(([, count]) => count > 0);
+            if (owned.length === 0) return reply('❌ 보유한 사치품이 없습니다.');
+
+            let totalReturn = 0;
+            let detail = '';
+            for (const [name, count] of owned) {
+                const market = LUXURY_MARKET[name];
+                const unitPrice = market ? Math.floor(market.currentPrice * 0.9) : 0;
+                const subtotal = unitPrice * count;
+                totalReturn += subtotal;
+                detail += `➔ ${name} x${count} → +${subtotal.toLocaleString()}P\n`;
+                user.luxuries[name] = 0;
+            }
+            user.points += totalReturn;
+            saveData(db);
+
+            return reply(
+                '💸 [사치품 일괄 매각 완료]\n' +
+                '─────────────────────\n' +
+                detail +
+                '─────────────────────\n' +
+                `💵 총 환급액: +${totalReturn.toLocaleString()}P (수수료 10% 차감)\n` +
+                `💰 현재 잔액: ${user.points.toLocaleString()}P`
+            );
+        }
+
         if (command === '!구매' || command === '!판매') {
             const isBuy = command === '!구매';
-            if (args.length < 1) return reply('❌ 품목명을 입력하세요.');
-            const itemName = args[0];
+            if (args.length < 1) return reply('❌ 번호 또는 품목명을 입력하세요. (!상점 참고)');
+            const rawArg = args[0];
 
-            // (1) 전문 장비 (구매만 가능)
-            if (isBuy && ITEM_SHOP[itemName]) {
-                const item = ITEM_SHOP[itemName];
-                if (user.items.includes(itemName)) return reply('⚠️ 중복 보유 불가.');
-                if (user.points < item.price) return reply(`❌ 자금 부족. 필요 금액: ${item.price.toLocaleString()}P`);
-                user.points -= item.price;
-                user.items.push(itemName);
-                saveData(db);
-                return reply(`🎁 [장비 구입 성공]\n품목: ${itemName}\n💵 지출 금액: -${item.price.toLocaleString()}P\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
-            }
-
-            // (2) 명품 / 하이퍼카 (구매·판매)
-            if (LUXURY_MARKET[itemName]) {
-                const marketItem = LUXURY_MARKET[itemName];
-                if (isBuy) {
-                    if (user.points < marketItem.currentPrice) return reply(`❌ 자금 부족. 현 시세: ${marketItem.currentPrice.toLocaleString()}P`);
-                    user.points -= marketItem.currentPrice;
-                    user.luxuries[itemName] = (user.luxuries[itemName] || 0) + 1;
+            if (isBuy) {
+                const itemName = resolveItemShopName(rawArg);
+                if (itemName && ITEM_SHOP[itemName]) {
+                    const item = ITEM_SHOP[itemName];
+                    if (user.items.includes(itemName)) return reply('⚠️ 중복 보유 불가.');
+                    if (user.points < item.price) return reply(`❌ 자금 부족. 필요 금액: ${item.price.toLocaleString()}P`);
+                    user.points -= item.price;
+                    user.items.push(itemName);
                     saveData(db);
-                    return reply(`🏎️ [FLEX 영입 성사]\n품목: [${itemName}]\n💵 지출 시세: -${marketItem.currentPrice.toLocaleString()}P\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
-                } else {
-                    if (!user.luxuries[itemName] || user.luxuries[itemName] <= 0) return reply('❌ 보유 자산이 없습니다.');
-                    const sellReturn = Math.floor(marketItem.currentPrice * 0.9);
-                    user.luxuries[itemName] -= 1;
-                    user.points += sellReturn;
-                    saveData(db);
-                    return reply(`💸 [중고 매각 완료]\n품목: ${itemName}\n💵 환급 금액: +${sellReturn.toLocaleString()}P (수수료 10% 차감)\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
+                    return reply(`🎁 [장비 구입 성공]\n품목: ${itemName}\n💵 지출 금액: -${item.price.toLocaleString()}P\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
                 }
             }
 
-            // (3) 어디에도 없는 품목
-            return reply('❌ 존재하지 않는 품목입니다. !상점 으로 목록을 확인하세요.');
+            const luxName = resolveLuxuryName(rawArg);
+            if (luxName && LUXURY_MARKET[luxName]) {
+                const marketItem = LUXURY_MARKET[luxName];
+                if (isBuy) {
+                    if (user.points < marketItem.currentPrice) return reply(`❌ 자금 부족. 현 시세: ${marketItem.currentPrice.toLocaleString()}P`);
+                    user.points -= marketItem.currentPrice;
+                    user.luxuries[luxName] = (user.luxuries[luxName] || 0) + 1;
+                    saveData(db);
+                    return reply(`🏎️ [FLEX 영입 성사]\n품목: [${luxName}]\n💵 지출 시세: -${marketItem.currentPrice.toLocaleString()}P\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
+                } else {
+                    if (!user.luxuries[luxName] || user.luxuries[luxName] <= 0) return reply('❌ 보유 자산이 없습니다.');
+                    const sellReturn = Math.floor(marketItem.currentPrice * 0.9);
+                    user.luxuries[luxName] -= 1;
+                    user.points += sellReturn;
+                    saveData(db);
+                    return reply(`💸 [중고 매각 완료]\n품목: ${luxName}\n💵 환급 금액: +${sellReturn.toLocaleString()}P (수수료 10% 차감)\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
+                }
+            }
+
+            return reply('❌ 존재하지 않는 번호/품목입니다. !상점 으로 목록을 확인하세요.');
         }
 
-        // ── 코인 매수 / 매도 ──────────────────────
         if (command === '!매수' || command === '!매도') {
             const isBuy = command === '!매수';
             if (args.length < 2) return reply('❌ 양식 오류. 예: !매수 성빈코인 10');
@@ -499,13 +672,119 @@ server.on('message', (msg, rinfo) => {
             }
         }
 
-        // ── 섯다 판 개설 ──────────────────────────
+        if (command === '!알바상점') {
+            let msg = '👔 [직원 채용 센터]\n─────────────────────\n';
+            getEmployeeShopList().forEach(([name, info], idx) => {
+                msg += `${idx + 1}. ${name} — 영입가 ${info.hirePrice.toLocaleString()}P\n   ㄴ 분당 ${info.perMinute.toLocaleString()}P 수익 (${info.desc})\n`;
+            });
+            msg += '\n💵 !알바영입 [번호 or 이름]';
+            return reply(msg);
+        }
+
+        if (command === '!알바영입') {
+            if (args.length < 1) return reply('❌ !알바영입 [번호 or 이름]');
+            const empName = resolveEmployeeName(args[0]);
+            if (!empName) return reply('❌ 존재하지 않는 직원입니다. !알바상점 으로 확인하세요.');
+            if (user.employees[empName]) return reply(`⚠️ ${empName}님은 이미 채용 중입니다.`);
+
+            const emp = EMPLOYEE_SHOP[empName];
+            if (user.points < emp.hirePrice) return reply(`❌ 자금 부족. 필요 금액: ${emp.hirePrice.toLocaleString()}P`);
+
+            user.points -= emp.hirePrice;
+            user.employees[empName] = { hiredAt: Date.now() };
+            saveData(db);
+            return reply(
+                `👔 [채용 완료]\n${empName}님이 입사했습니다!\n` +
+                `💵 영입 비용: -${emp.hirePrice.toLocaleString()}P\n` +
+                `📈 분당 수익: ${emp.perMinute.toLocaleString()}P\n` +
+                `💰 현재 잔액: ${user.points.toLocaleString()}P`
+            );
+        }
+
+        if (command === '!알바') {
+            const empNames = Object.keys(user.employees || {});
+            if (empNames.length === 0) return reply('❌ 보유한 직원이 없습니다. !알바상점 으로 채용해보세요.');
+
+            const now = Date.now();
+            let msg = '👔 [내 직원 현황]\n─────────────────────\n';
+            let totalEarning = 0;
+            empNames.forEach((name, idx) => {
+                const emp = EMPLOYEE_SHOP[name];
+                const info = user.employees[name];
+                if (!emp || !info) return;
+                const earning = calcEmployeeEarning(emp, info.hiredAt, now);
+                const minutes = Math.floor((now - info.hiredAt) / 60000);
+                totalEarning += earning;
+                msg += `${idx + 1}. ${name} — 근무 ${minutes}분, 미정산 +${earning.toLocaleString()}P\n`;
+            });
+            msg += '─────────────────────\n';
+            msg += `💰 총 미정산 수익: ${totalEarning.toLocaleString()}P\n`;
+            msg += '➔ !알바출금 으로 전액 수령 가능';
+            return reply(msg);
+        }
+
+        if (command === '!알바출금') {
+            const empNames = Object.keys(user.employees || {});
+            if (empNames.length === 0) return reply('❌ 보유한 직원이 없습니다.');
+
+            const now = Date.now();
+            let totalEarning = 0;
+            let detail = '';
+            empNames.forEach(name => {
+                const emp = EMPLOYEE_SHOP[name];
+                const info = user.employees[name];
+                if (!emp || !info) return;
+                const earning = calcEmployeeEarning(emp, info.hiredAt, now);
+                totalEarning += earning;
+                detail += `➔ ${name}: +${earning.toLocaleString()}P\n`;
+                user.employees[name].hiredAt = now;
+            });
+
+            if (totalEarning <= 0) return reply('❌ 정산할 수익이 아직 없습니다. (조금 더 기다려주세요)');
+
+            user.points += totalEarning;
+            saveData(db);
+            return reply(
+                '💵 [직원 수익 출금 완료]\n' +
+                '─────────────────────\n' +
+                detail +
+                '─────────────────────\n' +
+                `💰 총 수령액: +${totalEarning.toLocaleString()}P\n` +
+                `💎 현재 잔액: ${user.points.toLocaleString()}P\n` +
+                '⏱️ 모든 직원의 근무 시간이 초기화되었습니다.'
+            );
+        }
+
+        if (command === '!알바판매' || command === '!알바해고') {
+            if (args.length < 1) return reply('❌ !알바판매 [번호 or 이름]');
+            const empName = resolveOwnedEmployeeName(user, args[0]);
+            if (!empName) return reply('❌ 보유하지 않은 직원입니다. !알바 로 확인하세요.');
+
+            const emp = EMPLOYEE_SHOP[empName];
+            const info = user.employees[empName];
+            const now = Date.now();
+            const earning = calcEmployeeEarning(emp, info.hiredAt, now);
+            const severance = Math.floor(emp.hirePrice * 0.9);
+
+            delete user.employees[empName];
+            user.points += earning + severance;
+            saveData(db);
+
+            return reply(
+                `👋 [퇴사 처리 완료] ${empName}님이 퇴사했습니다.\n` +
+                '─────────────────────\n' +
+                `💵 미정산 수익 정산: +${earning.toLocaleString()}P\n` +
+                `💰 퇴직금(영입가 90%): +${severance.toLocaleString()}P (수수료 10% 차감)\n` +
+                '─────────────────────\n' +
+                `💎 현재 잔액: ${user.points.toLocaleString()}P`
+            );
+        }
+
         if (command === '!섯다') {
             if (gameSessions[room]) return reply('⚠️ 게임이 이미 진행 중입니다.');
 
             const shuffled = [...DECK].sort(() => Math.random() - 0.5);
 
-            // [아귀의눈] 5% 확률 삼팔광땡 설계
             if (user.items.includes('아귀의눈') && Math.random() < 0.05) {
                 shuffled[0] = { m: 3, name: '3광' };
                 shuffled[1] = { m: 8, name: '8광' };
@@ -521,7 +800,6 @@ server.on('message', (msg, rinfo) => {
                 dResult: evaluateHand(d1, d2)
             };
 
-            // [짝귀의귀] 80% 확률 딜러 족보 힌트
             let earHint = '';
             if (user.items.includes('짝귀의귀') && Math.random() < 0.8) {
                 const dScore = gameSessions[room].dResult.score;
@@ -540,7 +818,6 @@ server.on('message', (msg, rinfo) => {
             );
         }
 
-        // ── 패 바꾸기 ─────────────────────────────
         if (command === '!바꾸기') {
             const session = gameSessions[room];
             if (!session || session.player !== sender || session.status !== 'WAITING_BET') return;
@@ -552,7 +829,6 @@ server.on('message', (msg, rinfo) => {
             return reply(`🎰 [패 교체] 새 패: [ ${session.pCards[0].name} ]. 배팅을 이어가세요.`);
         }
 
-        // ── 배팅 및 정산 ──────────────────────────
         if (command === '!배팅') {
             const session = gameSessions[room];
             if (!session || session.player !== sender) return;
@@ -563,7 +839,7 @@ server.on('message', (msg, rinfo) => {
             const pRes = session.pResult;
             const dRes = session.dResult;
             let finalMsg =
-                `🎴 [섯다 결과]\n` +
+                '🎴 [섯다 결과]\n' +
                 `👤 내 패: [ ${session.pCards[0].name} ][ ${session.pCards[1].name} ] (${pRes.name})\n` +
                 `🤖 딜러: [ ${session.dCards[0].name} ][ ${session.dCards[1].name} ] (${dRes.name})\n` +
                 '──────────────────\n';
@@ -582,95 +858,91 @@ server.on('message', (msg, rinfo) => {
             delete gameSessions[room];
             return reply(`${finalMsg}\n💰 내 지갑: ${user.points.toLocaleString()}P`);
         }
-// ── 경마: 베팅 판 개설 ─────────────────────
-if (command === '!경마' || command === '!경마시작') {
-    if (horseRace) return reply('⚠️ 이미 경마 베팅이 진행 중입니다. (!경마현황 / !경마출발)');
-    horseRace = { host: sender, pot: 0, bets: {}, horseTotals: {} };
-    let intro = `🐎 [경마 베팅장 개장!] (개장자: ${sender})\n\n📋 출전마 명단\n`;
-    for (const h of HORSES) intro += `  ${h.no}번 ${h.name}\n`;
-    intro += `\n💵 !경마베팅 [말번호] [금액] 으로 참가\n📊 !경마현황  🚦 !경마출발  ❌ !경마취소`;
-    return reply(intro);
-}
 
-// ── 경마: 베팅 참가 (1인 1마) ─────────────
-if (command === '!경마베팅') {
-    if (!horseRace) return reply('❌ 진행 중인 경마 베팅이 없습니다. !경마시작');
-    if (args.length < 2) return reply('❌ 양식: !경마베팅 [말번호] [금액]');
-    const horseNo = parseInt(args[0], 10);
-    const amount = parseInt(args[1], 10);
-    if (!HORSES.some(h => h.no === horseNo)) return reply('❌ 말 번호는 1~5 입니다.');
-    if (Number.isNaN(amount) || amount <= 0) return reply('❌ 베팅 금액 오류.');
-    if (horseRace.bets[sender]) return reply('⚠️ 이미 베팅했습니다. (1인 1마)');
-    if (user.points < amount) return reply(`❌ 잔액 부족. 보유: ${user.points.toLocaleString()}P`);
-
-    user.points -= amount;
-    horseRace.pot += amount;
-    horseRace.bets[sender] = { horse: horseNo, amount };
-    horseRace.horseTotals[horseNo] = (horseRace.horseTotals[horseNo] || 0) + amount;
-    saveData(db);
-
-    const horse = HORSES.find(h => h.no === horseNo);
-    return reply(`✅ [베팅 접수] ${sender} → ${horseNo}번 ${horse.name}\n💵 베팅액: ${amount.toLocaleString()}P\n🍯 현재 총 판돈: ${horseRace.pot.toLocaleString()}P`);
-}
-
-// ── 경마: 현황판 (실시간 배당) ────────────
-if (command === '!경마현황') {
-    if (!horseRace) return reply('❌ 진행 중인 경마가 없습니다.');
-    let board = `📊 [경마 베팅 현황]\n🍯 총 판돈: ${horseRace.pot.toLocaleString()}P\n\n`;
-    for (const h of HORSES) {
-        const total = horseRace.horseTotals[h.no] || 0;
-        const odds = total > 0 ? (horseRace.pot / total).toFixed(2) : '—';
-        board += `${h.no}번 ${h.name}: ${total.toLocaleString()}P (배당 x${odds})\n`;
-    }
-    const players = Object.keys(horseRace.bets);
-    board += `\n👥 참가자(${players.length}명): ${players.length ? players.join(', ') : '없음'}`;
-    return reply(board);
-}
-
-// ── 경마: 취소 (개장자만, 전원 환불) ──────
-if (command === '!경마취소') {
-    if (!horseRace) return reply('❌ 진행 중인 경마가 없습니다.');
-    if (horseRace.host !== sender) return reply('❌ 개장자만 취소할 수 있습니다.');
-    for (const [name, bet] of Object.entries(horseRace.bets)) ensureUser(db, name).points += bet.amount;
-    saveData(db);
-    horseRace = null;
-    return reply('🛑 [경마 취소] 모든 베팅이 환불되었습니다.');
-}
-
-// ── 경마: 출발 & 정산 (최소 2명, 미당첨 50% 환급) ──
-if (command === '!경마출발') {
-    if (!horseRace) return reply('❌ 진행 중인 경마가 없습니다.');
-    if (Object.keys(horseRace.bets).length < 2) return reply('❌ 최소 2명 이상 참가해야 출발할 수 있습니다.');
-
-    const result = runHorseRace();
-    const winnerNo = result.ranked[0].horse.no;
-    const winners = Object.entries(horseRace.bets).filter(([, b]) => b.horse === winnerNo);
-
-    let payoutMsg = '';
-    if (winners.length === 0) {
-        payoutMsg = '\n\n😮 아무도 우승마를 맞히지 못했습니다! (베팅액의 50%만 환급, 하우스 귀속)';
-        for (const [name, bet] of Object.entries(horseRace.bets)) {
-            const refund = Math.floor(bet.amount * 0.5);
-            ensureUser(db, name).points += refund;
-            payoutMsg += `\n💸 ${name}: +${refund.toLocaleString()}P 환급 (-${(bet.amount - refund).toLocaleString()}P 손실)`;
+        if (command === '!경마' || command === '!경마시작') {
+            if (horseRace) return reply('⚠️ 이미 경마 베팅이 진행 중입니다. (!경마현황 / !경마출발)');
+            horseRace = { host: sender, pot: 0, bets: {}, horseTotals: {} };
+            let intro = `🐎 [경마 베팅장 개장!] (개장자: ${sender})\n\n📋 출전마 명단\n`;
+            for (const h of HORSES) intro += `  ${h.no}번 ${h.name}\n`;
+            intro += '\n💵 !경마베팅 [말번호] [금액] 으로 참가\n📊 !경마현황  🚦 !경마출발  ❌ !경마취소';
+            return reply(intro);
         }
-    } else {
-        const winStake = winners.reduce((sum, [, b]) => sum + b.amount, 0);
-        payoutMsg = '\n\n💰 [당첨금 정산]';
-        for (const [name, bet] of winners) {
-            const payout = Math.floor(horseRace.pot * (bet.amount / winStake));
-            ensureUser(db, name).points += payout;
-            const profit = payout - bet.amount;
-            payoutMsg += `\n🎉 ${name}: +${payout.toLocaleString()}P (순익 ${profit >= 0 ? '+' : ''}${profit.toLocaleString()}P)`;
-        }
-    }
 
-    saveData(db);
-    const potSnapshot = horseRace.pot;
-    horseRace = null;
-    return reply(buildRaceBoard(result) + payoutMsg + `\n\n🍯 총 판돈: ${potSnapshot.toLocaleString()}P`);
-}
-        // ── 기습 퀴즈 정답 검증 (명령어가 아닌 일반 채팅) ──
+        if (command === '!경마베팅') {
+            if (!horseRace) return reply('❌ 진행 중인 경마 베팅이 없습니다. !경마시작');
+            if (args.length < 2) return reply('❌ 양식: !경마베팅 [말번호] [금액]');
+            const horseNo = parseInt(args[0], 10);
+            const amount = parseInt(args[1], 10);
+            if (!HORSES.some(h => h.no === horseNo)) return reply('❌ 말 번호는 1~5 입니다.');
+            if (Number.isNaN(amount) || amount <= 0) return reply('❌ 베팅 금액 오류.');
+            if (horseRace.bets[sender]) return reply('⚠️ 이미 베팅했습니다. (1인 1마)');
+            if (user.points < amount) return reply(`❌ 잔액 부족. 보유: ${user.points.toLocaleString()}P`);
+
+            user.points -= amount;
+            horseRace.pot += amount;
+            horseRace.bets[sender] = { horse: horseNo, amount };
+            horseRace.horseTotals[horseNo] = (horseRace.horseTotals[horseNo] || 0) + amount;
+            saveData(db);
+
+            const horse = HORSES.find(h => h.no === horseNo);
+            return reply(`✅ [베팅 접수] ${sender} → ${horseNo}번 ${horse.name}\n💵 베팅액: ${amount.toLocaleString()}P\n🍯 현재 총 판돈: ${horseRace.pot.toLocaleString()}P`);
+        }
+
+        if (command === '!경마현황') {
+            if (!horseRace) return reply('❌ 진행 중인 경마가 없습니다.');
+            let board = `📊 [경마 베팅 현황]\n🍯 총 판돈: ${horseRace.pot.toLocaleString()}P\n\n`;
+            for (const h of HORSES) {
+                const total = horseRace.horseTotals[h.no] || 0;
+                const odds = total > 0 ? (horseRace.pot / total).toFixed(2) : '—';
+                board += `${h.no}번 ${h.name}: ${total.toLocaleString()}P (배당 x${odds})\n`;
+            }
+            const players = Object.keys(horseRace.bets);
+            board += `\n👥 참가자(${players.length}명): ${players.length ? players.join(', ') : '없음'}`;
+            return reply(board);
+        }
+
+        if (command === '!경마취소') {
+            if (!horseRace) return reply('❌ 진행 중인 경마가 없습니다.');
+            if (horseRace.host !== sender) return reply('❌ 개장자만 취소할 수 있습니다.');
+            for (const [name, bet] of Object.entries(horseRace.bets)) ensureUser(db, name).points += bet.amount;
+            saveData(db);
+            horseRace = null;
+            return reply('🛑 [경마 취소] 모든 베팅이 환불되었습니다.');
+        }
+
+        if (command === '!경마출발') {
+            if (!horseRace) return reply('❌ 진행 중인 경마가 없습니다.');
+            if (Object.keys(horseRace.bets).length < 2) return reply('❌ 최소 2명 이상 참가해야 출발할 수 있습니다.');
+
+            const result = runHorseRace();
+            const winnerNo = result.ranked[0].horse.no;
+            const winners = Object.entries(horseRace.bets).filter(([, b]) => b.horse === winnerNo);
+
+            let payoutMsg = '';
+            if (winners.length === 0) {
+                payoutMsg = '\n\n😮 아무도 우승마를 맞히지 못했습니다! (베팅액의 50%만 환급, 하우스 귀속)';
+                for (const [name, bet] of Object.entries(horseRace.bets)) {
+                    const refund = Math.floor(bet.amount * 0.5);
+                    ensureUser(db, name).points += refund;
+                    payoutMsg += `\n💸 ${name}: +${refund.toLocaleString()}P 환급 (-${(bet.amount - refund).toLocaleString()}P 손실)`;
+                }
+            } else {
+                const winStake = winners.reduce((sum, [, b]) => sum + b.amount, 0);
+                payoutMsg = '\n\n💰 [당첨금 정산]';
+                for (const [name, bet] of winners) {
+                    const payout = Math.floor(horseRace.pot * (bet.amount / winStake));
+                    ensureUser(db, name).points += payout;
+                    const profit = payout - bet.amount;
+                    payoutMsg += `\n🎉 ${name}: +${payout.toLocaleString()}P (순익 ${profit >= 0 ? '+' : ''}${profit.toLocaleString()}P)`;
+                }
+            }
+
+            saveData(db);
+            const potSnapshot = horseRace.pot;
+            horseRace = null;
+            return reply(buildRaceBoard(result) + payoutMsg + `\n\n🍯 총 판돈: ${potSnapshot.toLocaleString()}P`);
+        }
+
         if (currentQuiz && content.includes(currentQuiz.a)) {
             if (quizTimer) { clearTimeout(quizTimer); quizTimer = null; }
             currentQuiz = null;
