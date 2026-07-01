@@ -308,11 +308,18 @@ function formatKRW(n) {
     const neg = n < 0;
     n = Math.abs(Math.floor(n));
     if (n === 0) return '0원';
-    const 조 = Math.floor(n / 1_000_000_000_000);
+
+    // 단위: 해(垓)=10^20, 경(京)=10^16, 조=10^12, 억=10^8, 만=10^4
+    const 해 = Math.floor(n / 100_000_000_000_000_000_000);
+    const 경 = Math.floor((n % 100_000_000_000_000_000_000) / 10_000_000_000_000_000);
+    const 조 = Math.floor((n % 10_000_000_000_000_000) / 1_000_000_000_000);
     const 억 = Math.floor((n % 1_000_000_000_000) / 100_000_000);
     const 만 = Math.floor((n % 100_000_000) / 10_000);
     const 나머지 = n % 10_000;
+
     const parts = [];
+    if (해 > 0) parts.push(`${해}해`);
+    if (경 > 0) parts.push(`${경}경`);
     if (조 > 0) parts.push(`${조}조`);
     if (억 > 0) parts.push(`${억}억`);
     if (만 > 0) parts.push(`${만}만`);
@@ -322,6 +329,7 @@ function formatKRW(n) {
         if (천 > 0) parts.push(`${천}천`);
         if (미만 > 0) parts.push(`${미만}원`);
     }
+
     const result = parts.join(' ');
     return neg ? '-' + result : result;
 }
