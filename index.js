@@ -323,11 +323,8 @@ function formatKRW(n) {
     if (조 > 0) parts.push(`${조}조`);
     if (억 > 0) parts.push(`${억}억`);
     if (만 > 0) parts.push(`${만}만`);
-    if (나머지 > 0) {
-        const 천 = Math.floor(나머지 / 1000);
-        const 미만 = 나머지 % 1000;
-        if (천 > 0) parts.push(`${천}천`);
-        if (미만 > 0) parts.push(`${미만}원`);
+   if (나머지 > 0) {
+        parts.push(`${나머지}원`);
     }
 
     const result = parts.join(' ');
