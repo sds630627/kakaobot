@@ -1207,9 +1207,9 @@ server.on('message', (msg, rinfo) => {
                 dCards: [d1, d2],
                 pResult: evaluateHand(p1, p2),
                 dResult: evaluateHand(d1, d2),
-                changesUsed: 0,           // 요청 3: 사용한 패교체 횟수
-                maxChanges: getMaxCardChanges(user)  // 요청 3: 보유 기술 기준 최대 횟수
-                maxBet: user.points 
+                changesUsed: 0,
+                maxChanges: getMaxCardChanges(user),
+                maxBet: user.points
             };
 
             let earHint = '';
@@ -1258,23 +1258,23 @@ server.on('message', (msg, rinfo) => {
         }
 
         // ── 배팅 및 정산 (요청 4, 5, 8: 약어+올인 등+보유금액 안내) ──
-       if (command === '!배팅') {
-    const session = gameSessions[room];
-    if (!session || session.player !== sender) return;
-    if (args.length < 1) return reply(`❌ !배팅 금액을 기입하세요. (최대: ${formatKRW(session.maxBet)})`);
+               if (command === '!배팅') {
+            const session = gameSessions[room];
+            if (!session || session.player !== sender) return;
+            if (args.length < 1) return reply(`❌ !배팅 금액을 기입하세요. (최대: ${formatKRW(session.maxBet)})`);
 
-    const betAmount = resolveBetAmount(args[0], session.maxBet);  // ← user.points → session.maxBet
+            const betAmount = resolveBetAmount(args[0], session.maxBet);
 
-    if (Number.isNaN(betAmount) || betAmount <= 0) {
-        return reply(`❌ 배팅 오류. (최대 배팅: ${formatKRW(session.maxBet)})`);
-    }
-    if (user.points < betAmount) {
-        return reply(`❌ 현재 보유 현금 부족. (보유: ${formatKRW(user.points)})`);
-    }
-    if (betAmount > session.maxBet) {
-        return reply(`❌ 게임 개설 시점 현금 초과. (최대 배팅: ${formatKRW(session.maxBet)})`);
-    }
-//
+            if (Number.isNaN(betAmount) || betAmount <= 0) {
+                return reply(`❌ 배팅 오류. (최대 배팅: ${formatKRW(session.maxBet)})`);
+            }
+            if (user.points < betAmount) {
+                return reply(`❌ 현재 보유 현금 부족. (보유: ${formatKRW(user.points)})`);
+            }
+            if (betAmount > session.maxBet) {
+                return reply(`❌ 게임 개설 시점 현금 초과. (최대 배팅: ${formatKRW(session.maxBet)})`);
+            }
+
             const pRes = session.pResult;
             const dRes = session.dResult;
             let finalMsg =
@@ -1297,6 +1297,7 @@ server.on('message', (msg, rinfo) => {
             delete gameSessions[room];
             return reply(`${finalMsg}\n💰 내 지갑: ${formatKRW(user.points)}`);
         }
+
 
         // ── 경마: 베팅 판 개설 ─────────────────────
         if (command === '!경마' || command === '!경마시작') {
