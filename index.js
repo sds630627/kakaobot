@@ -1274,7 +1274,7 @@ server.on('message', (msg, rinfo) => {
     if (betAmount > session.maxBet) {
         return reply(`❌ 게임 개설 시점 현금 초과. (최대 배팅: ${formatKRW(session.maxBet)})`);
     }
-
+//
             const pRes = session.pResult;
             const dRes = session.dResult;
             let finalMsg =
