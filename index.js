@@ -302,6 +302,30 @@ function resolveBetAmount(betArg, currentPoints) {
 }
 
 // 송금 약어: 전재산
+
+function formatKRW(n) {
+    if (n == null || Number.isNaN(n)) return '0원';
+    const neg = n < 0;
+    n = Math.abs(Math.floor(n));
+    if (n === 0) return '0원';
+    const 조 = Math.floor(n / 1_000_000_000_000);
+    const 억 = Math.floor((n % 1_000_000_000_000) / 100_000_000);
+    const 만 = Math.floor((n % 100_000_000) / 10_000);
+    const 나머지 = n % 10_000;
+    const parts = [];
+    if (조 > 0) parts.push(`${조}조`);
+    if (억 > 0) parts.push(`${억}억`);
+    if (만 > 0) parts.push(`${만}만`);
+    if (나머지 > 0) {
+        const 천 = Math.floor(나머지 / 1000);
+        const 미만 = 나머지 % 1000;
+        if (천 > 0) parts.push(`${천}천`);
+        if (미만 > 0) parts.push(`${미만}원`);
+    }
+    const result = parts.join(' ');
+    return neg ? '-' + result : result;
+}
+
 function resolveTransferAmount(amountArg, currentPoints) {
     if (amountArg === '전재산') return currentPoints;
     return parseAmount(amountArg);
@@ -474,14 +498,14 @@ function advanceBlackjack(db, room, sender) {
         totalPayout += betForThisHand + judged.payout;
 
         const prefix = session.hands.length > 1 ? `[${idx + 1}번째 패] ` : '';
-        resultMsg += `${prefix}${handDisplay(hand.cards)} (${judged.pScore}) → ${resultLabel(judged.resultType)} ${judged.payout >= 0 ? '+' : ''}${judged.payout.toLocaleString()}P\n`;
+        resultMsg += `${prefix}${handDisplay(hand.cards)} (${judged.pScore}) → ${resultLabel(judged.resultType)} ${judged.payout >= 0 ? '+' : ''}${formatKRW(judged.payout)}\n`;
     });
 
     user.points += totalPayout;
     saveData(db);
     delete blackjackSessions[room];
 
-    resultMsg += `──────────────────\n💰 내 지갑: ${user.points.toLocaleString()}P`;
+    resultMsg += `──────────────────\n💰 내 지갑: ${formatKRW(user.points)}`;
     return resultMsg;
 }
 
@@ -593,7 +617,7 @@ function buildNewsReport() {
         if (nCoinPrice < 10) nCoinPrice = 10;
         COIN_MARKET[key].currentPrice = nCoinPrice;
         const diff = COIN_MARKET[key].currentPrice - COIN_MARKET[key].lastPrice;
-        report += `\n 🪙 ${key}: ${COIN_MARKET[key].currentPrice.toLocaleString()}P (${diff >= 0 ? '🔺 +' : '🔻 '}${Math.abs(diff).toLocaleString()}P)`;
+        report += `\n 🪙 ${key}: ${formatKRW(COIN_MARKET[key].currentPrice)} (${diff >= 0 ? '🔺 +' : '🔻 '}${formatKRW(Math.abs(diff))}P)`;
     }
 
     saveMarket();
@@ -775,12 +799,12 @@ server.on('message', (msg, rinfo) => {
         if (command === '!시세') {
             let mMsg = '📊 [실시간 금융 거래소 시세판]\n\n🏎️ [1. 사치품 호가]\n';
             getLuxuryList().forEach(([name, info], idx) => {
-                mMsg += `${idx + 1}. ${name}: ${info.currentPrice.toLocaleString()}P\n`;
+                mMsg += `${idx + 1}. ${name}: ${formatKRW(info.currentPrice)}\n`;
             });
             mMsg += '\n📈 [2. 가상자산 코인 시세]\n';
             for (const [name, info] of Object.entries(COIN_MARKET)) {
                 const diff = info.currentPrice - info.lastPrice;
-                mMsg += `➔ ${name}: ${info.currentPrice.toLocaleString()}P (${diff >= 0 ? '🔺 +' : '🔻 '}${Math.abs(diff).toLocaleString()}P)\n`;
+                mMsg += `➔ ${name}: ${formatKRW(info.currentPrice)} (${diff >= 0 ? '🔺 +' : '🔻 '}${formatKRW(Math.abs(diff))}P)\n`;
             }
             return reply(mMsg);
         }
@@ -789,11 +813,11 @@ server.on('message', (msg, rinfo) => {
         if (command === '!상점') {
             let shopMsg = '🛒 [타짜의 만물 상점]\n\n🎯 [1. 전문 장비 매장] (!구매 번호)\n';
             Object.entries(ITEM_SHOP).forEach(([name, info], idx) => {
-                shopMsg += `${idx + 1}. ${name} (${info.price.toLocaleString()}P)\n   ㄴ ${info.desc}\n`;
+                shopMsg += `${idx + 1}. ${name} (${formatKRW(info.price)})\n   ㄴ ${info.desc}\n`;
             });
             shopMsg += '\n🏎️ [2. 명품/차량/자산 매장] (!구매 번호)\n';
             getLuxuryList().forEach(([name, info], idx) => {
-                shopMsg += `${idx + 1}. ${name} [${info.type}] (${info.currentPrice.toLocaleString()}P)\n`;
+                shopMsg += `${idx + 1}. ${name} [${info.type}] (${formatKRW(info.currentPrice)})\n`;
             });
             return reply(shopMsg);
         }
@@ -805,7 +829,7 @@ server.on('message', (msg, rinfo) => {
             user.points += 1000;
             user.lastCheckIn = today;
             saveData(db);
-            return reply(`🎉 [출석 정착금 지급]\n💵 지급 금액: +1,000P\n💰 보유 잔액: ${user.points.toLocaleString()}P`);
+            return reply(`🎉 [출석 정착금 지급]\n💵 지급 금액: +1,000P\n💰 보유 잔액: ${formatKRW(user.points)}`);
         }
 
         // ── 지갑 / 정보 (요청 1, 2: 코인 동적표시 + 변동률) ──
@@ -817,7 +841,7 @@ server.on('message', (msg, rinfo) => {
                 if (holding.count > 0) {
                     const current = LUXURY_MARKET[name] ? LUXURY_MARKET[name].currentPrice : holding.avgPrice;
                     const rateStr = formatChangeRate(holding.avgPrice, current);
-                    luxList.push(`${name}(${holding.count}개, 평단 ${holding.avgPrice.toLocaleString()}P${rateStr})`);
+                    luxList.push(`${name}(${holding.count}개, 평단 ${formatKRW(holding.avgPrice)}${rateStr})`);
                 }
             }
             const luxDisplay = luxList.length > 0 ? luxList.join('\n   ') : '없음';
@@ -827,7 +851,7 @@ server.on('message', (msg, rinfo) => {
                 if (holding.count > 0) {
                     const current = COIN_MARKET[name] ? COIN_MARKET[name].currentPrice : holding.avgPrice;
                     const rateStr = formatChangeRate(holding.avgPrice, current);
-                    coinLines.push(`🪙 ${name}: ${holding.count.toLocaleString()}개 (평단 ${holding.avgPrice.toLocaleString()}P${rateStr})`);
+                    coinLines.push(`🪙 ${name}: ${holding.count.toLocaleString()}개 (평단 ${formatKRW(holding.avgPrice)}${rateStr})`);
                 }
             }
             const coinDisplay = coinLines.length > 0 ? coinLines.join('\n') : '🪙 보유 코인 없음';
@@ -838,7 +862,7 @@ server.on('message', (msg, rinfo) => {
 
             return reply(
                 `💰 [${sender}님의 종합 자산 정보창]\n` +
-                `현금 잔고: ${user.points.toLocaleString()}P\n` +
+                `현금 잔고: ${formatKRW(user.points)}\n` +
                 '─────────────────────\n' +
                 `🛠 장비: [ ${items} ]\n` +
                 `👑 명품: ${luxDisplay}\n` +
@@ -846,10 +870,10 @@ server.on('message', (msg, rinfo) => {
                 '─────────────────────\n' +
                 coinDisplay + '\n' +
                 '─────────────────────\n' +
-                `📊 명품 시세가치: ${nw.luxuryValue.toLocaleString()}P\n` +
-                `📊 코인 시세가치: ${nw.coinValue.toLocaleString()}P\n` +
-                `👔 직원 미정산 수익: ${nw.employeeEarning.toLocaleString()}P (!알바출금으로 받기)\n` +
-                `💎 총 자산: ${nw.total.toLocaleString()}P`
+                `📊 명품 시세가치: ${formatKRW(nw.luxuryValue)}\n` +
+                `📊 코인 시세가치: ${formatKRW(nw.coinValue)}\n` +
+                `👔 직원 미정산 수익: ${formatKRW(nw.employeeEarning)} (!알바출금으로 받기)\n` +
+                `💎 총 자산: ${formatKRW(nw.total)}`
             );
         }
 
@@ -873,7 +897,7 @@ server.on('message', (msg, rinfo) => {
             let board = '🏆 [실시간 총자산 랭킹 TOP 10]\n─────────────────────\n';
             ranked.forEach((row, idx) => {
                 const medal = medals[idx] || `${idx + 1}.`;
-                board += `${medal} ${row.name} : ${row.nw.total.toLocaleString()}P\n`;
+                board += `${medal} ${row.name} : ${formatKRW(row.nw.total)}\n`;
             });
             return reply(board);
         }
@@ -886,14 +910,14 @@ server.on('message', (msg, rinfo) => {
 
             if (Number.isNaN(sendAmount) || sendAmount <= 0 || sender === receiverName ||
                 user.points < sendAmount || !userExists(db, receiverName)) {
-                return reply(`❌ 송금 실패. 액수 부족 혹은 미가입 대상입니다. (보유: ${user.points.toLocaleString()}P)`);
+                return reply(`❌ 송금 실패. 액수 부족 혹은 미가입 대상입니다. (보유: ${formatKRW(user.points)})`);
             }
 
             const receiver = ensureUser(db, receiverName);
             user.points -= sendAmount;
             receiver.points += sendAmount;
             saveData(db);
-            return reply(`💸 [송금 완료]\n💵 이체 금액: -${sendAmount.toLocaleString()}P\n👤 대상: ${receiverName}님\n💰 내 잔액: ${user.points.toLocaleString()}P`);
+            return reply(`💸 [송금 완료]\n💵 이체 금액: -${formatKRW(sendAmount)}\n👤 대상: ${receiverName}님\n💰 내 잔액: ${formatKRW(user.points)}`);
         }
 
         // ── 사치품(명품) 모두 팔기 ─────────────────
@@ -908,7 +932,7 @@ server.on('message', (msg, rinfo) => {
                 const unitPrice = market ? Math.floor(market.currentPrice * 0.9) : 0;
                 const subtotal = unitPrice * holding.count;
                 totalReturn += subtotal;
-                detail += `➔ ${name} x${holding.count} → +${subtotal.toLocaleString()}P\n`;
+                detail += `➔ ${name} x${holding.count} → +${formatKRW(subtotal)}\n`;
                 user.luxuries[name] = { count: 0, avgPrice: 0 };
             }
             user.points += totalReturn;
@@ -919,8 +943,8 @@ server.on('message', (msg, rinfo) => {
                 '─────────────────────\n' +
                 detail +
                 '─────────────────────\n' +
-                `💵 총 환급액: +${totalReturn.toLocaleString()}P (수수료 10% 차감)\n` +
-                `💰 현재 잔액: ${user.points.toLocaleString()}P`
+                `💵 총 환급액: +${formatKRW(totalReturn)} (수수료 10% 차감)\n` +
+                `💰 현재 잔액: ${formatKRW(user.points)}`
             );
         }
 
@@ -939,11 +963,11 @@ server.on('message', (msg, rinfo) => {
                     }
                     const item = ITEM_SHOP[itemName];
                     if (user.items.includes(itemName)) return reply('⚠️ 중복 보유 불가.');
-                    if (user.points < item.price) return reply(`❌ 자금 부족. 필요 금액: ${item.price.toLocaleString()}P (보유: ${user.points.toLocaleString()}P)`);
+                    if (user.points < item.price) return reply(`❌ 자금 부족. 필요 금액: ${formatKRW(item.price)} (보유: ${formatKRW(user.points)})`);
                     user.points -= item.price;
                     user.items.push(itemName);
                     saveData(db);
-                    return reply(`🎁 [장비 구입 성공]\n품목: ${itemName}\n💵 지출 금액: -${item.price.toLocaleString()}P\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
+                    return reply(`🎁 [장비 구입 성공]\n품목: ${itemName}\n💵 지출 금액: -${formatKRW(item.price)}\n💰 현재 잔액: ${formatKRW(user.points)}`);
                 }
             }
 
@@ -955,11 +979,11 @@ server.on('message', (msg, rinfo) => {
                 const holding = user.luxuries[luxName];
 
                 if (isBuy) {
-                    if (user.points < marketItem.currentPrice) return reply(`❌ 자금 부족. 현 시세: ${marketItem.currentPrice.toLocaleString()}P (보유: ${user.points.toLocaleString()}P)`);
+                    if (user.points < marketItem.currentPrice) return reply(`❌ 자금 부족. 현 시세: ${formatKRW(marketItem.currentPrice)} (보유: ${formatKRW(user.points)})`);
                     user.points -= marketItem.currentPrice;
                     updateAvgBuy(holding, 1, marketItem.currentPrice);
                     saveData(db);
-                    return reply(`🏎️ [FLEX 영입 성사]\n품목: [${luxName}]\n💵 지출 시세: -${marketItem.currentPrice.toLocaleString()}P\n📊 평단가: ${holding.avgPrice.toLocaleString()}P\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
+                    return reply(`🏎️ [FLEX 영입 성사]\n품목: [${luxName}]\n💵 지출 시세: -${formatKRW(marketItem.currentPrice)}\n📊 평단가: ${formatKRW(holding.avgPrice)}\n💰 현재 잔액: ${formatKRW(user.points)}`);
                 } else {
                     if (!holding.count || holding.count <= 0) return reply('❌ 보유 자산이 없습니다.');
                     const sellReturn = Math.floor(marketItem.currentPrice * 0.9);
@@ -967,7 +991,7 @@ server.on('message', (msg, rinfo) => {
                     if (holding.count === 0) holding.avgPrice = 0;
                     user.points += sellReturn;
                     saveData(db);
-                    return reply(`💸 [중고 매각 완료]\n품목: ${luxName}\n💵 환급 금액: +${sellReturn.toLocaleString()}P (수수료 10% 차감)\n💰 현재 잔액: ${user.points.toLocaleString()}P`);
+                    return reply(`💸 [중고 매각 완료]\n품목: ${luxName}\n💵 환급 금액: +${formatKRW(sellReturn)} (수수료 10% 차감)\n💰 현재 잔액: ${formatKRW(user.points)}`);
                 }
             }
 
@@ -977,7 +1001,7 @@ server.on('message', (msg, rinfo) => {
         // ── 코인 매수 / 매도 (요청 4, 6, 7: 약어/풀매수/풀매도, 평단가) ──
         if (command === '!매수' || command === '!매도') {
             const isBuy = command === '!매수';
-            if (args.length < 2) return reply('❌ 양식 오류. 예: !매수 성빈코인 10 / !매수 성빈코인 풀');
+            if (args.length < 2) return reply('❌ 양식 오류. 예: !매수 성빈코인 50억 / !매수 성빈코인 100 / !매수 성빈코인 풀');
             const coinName = args[0];
 
             if (!COIN_MARKET[coinName]) return reply('❌ 존재하지 않는 코인입니다.');
@@ -986,23 +1010,48 @@ server.on('message', (msg, rinfo) => {
             const holding = user.coins[coinName];
 
             let amount;
-            if (isFullKeyword(args[1])) {
+            const amountArg = args[1];
+
+            if (isFullKeyword(amountArg)) {
+                // 풀 키워드: 매수=최대수량, 매도=전량
                 amount = isBuy ? Math.floor(user.points / price) : holding.count;
             } else {
-                amount = parseInt(args[1], 10);
+                const parsed = parseAmount(amountArg);
+                if (!Number.isNaN(parsed)) {
+                    const hasUnit = /[만억조]/.test(amountArg);
+                    if (hasUnit) {
+                        // 단위 있는 금액 입력 → 수량으로 변환 (ex: 50억 → 50억/단가)
+                        amount = Math.floor(parsed / price);
+                    } else {
+                        // 단위 없는 숫자 → 수량 직접 입력 (기존 방식)
+                        amount = parsed;
+                    }
+                } else {
+                    return reply('❌ 수량 또는 금액을 입력해주세요. 예: !매수 성빈코인 100 / !매수 성빈코인 50억');
+                }
             }
 
             if (Number.isNaN(amount) || amount <= 0) {
-                return reply(isBuy ? '❌ 매수 가능한 수량이 없습니다. (자금 부족)' : '❌ 매도할 수량이 없습니다.');
+                return reply(isBuy
+                    ? `❌ 매수 가능한 수량이 없습니다. (보유 현금: ${formatKRW(user.points)})`
+                    : '❌ 매도할 수량이 없습니다.');
             }
 
             if (isBuy) {
                 const totalCost = price * amount;
-                if (user.points < totalCost) return reply(`❌ 예수금 부족. 필요: ${totalCost.toLocaleString()}P (보유: ${user.points.toLocaleString()}P)`);
+                if (user.points < totalCost) return reply(`❌ 예수금 부족. 필요: ${formatKRW(totalCost)} (보유: ${formatKRW(user.points)})`);
                 user.points -= totalCost;
                 updateAvgBuy(holding, amount, price);
                 saveData(db);
-                return reply(`🪙 [코인 매수 체결]\n📈 종목: ${coinName}\n📦 계약 수량: ${amount.toLocaleString()}개\n💵 체결 단가: 각 ${price.toLocaleString()}P\n💰 총 결제 금액: -${totalCost.toLocaleString()}P\n📊 평단가: ${holding.avgPrice.toLocaleString()}P\n💎 내 남은 현금: ${user.points.toLocaleString()}P`);
+                return reply(
+                    `🪙 [코인 매수 체결]\n` +
+                    `📈 종목: ${coinName}\n` +
+                    `📦 계약 수량: ${amount.toLocaleString()}개\n` +
+                    `💵 체결 단가: 각 ${formatKRW(price)}\n` +
+                    `💰 총 결제 금액: -${formatKRW(totalCost)}\n` +
+                    `📊 평단가: ${formatKRW(holding.avgPrice)}\n` +
+                    `💎 내 남은 현금: ${formatKRW(user.points)}`
+                );
             } else {
                 if (!holding.count || holding.count < amount) return reply(`❌ 보유 물량 부족. (보유: ${(holding.count || 0).toLocaleString()}개)`);
                 const totalReturn = price * amount;
@@ -1010,7 +1059,14 @@ server.on('message', (msg, rinfo) => {
                 if (holding.count === 0) holding.avgPrice = 0;
                 user.points += totalReturn;
                 saveData(db);
-                return reply(`📉 [코인 청산 완료]\n📉 종목: ${coinName}\n📦 처분 수량: ${amount.toLocaleString()}개\n💵 정산 단가: 각 ${price.toLocaleString()}P\n💰 총 정산 금액: +${totalReturn.toLocaleString()}P\n💎 내 전체 현금: ${user.points.toLocaleString()}P`);
+                return reply(
+                    `📉 [코인 청산 완료]\n` +
+                    `📉 종목: ${coinName}\n` +
+                    `📦 처분 수량: ${amount.toLocaleString()}개\n` +
+                    `💵 정산 단가: 각 ${formatKRW(price)}\n` +
+                    `💰 총 정산 금액: +${formatKRW(totalReturn)}\n` +
+                    `💎 내 전체 현금: ${formatKRW(user.points)}`
+                );
             }
         }
 
@@ -1018,7 +1074,7 @@ server.on('message', (msg, rinfo) => {
         if (command === '!알바상점') {
             let msg = '👔 [직원 채용 센터]\n─────────────────────\n';
             getEmployeeShopList().forEach(([name, info], idx) => {
-                msg += `${idx + 1}. ${name} — 영입가 ${info.hirePrice.toLocaleString()}P\n   ㄴ 분당 ${info.perMinute.toLocaleString()}P 수익 (${info.desc})\n`;
+                msg += `${idx + 1}. ${name} — 영입가 ${formatKRW(info.hirePrice)}\n   ㄴ 분당 ${formatKRW(info.perMinute)} 수익 (${info.desc})\n`;
             });
             msg += '\n💵 !알바영입 [번호 or 이름]';
             return reply(msg);
@@ -1032,16 +1088,16 @@ server.on('message', (msg, rinfo) => {
             if (user.employees[empName]) return reply(`⚠️ ${empName}님은 이미 채용 중입니다.`);
 
             const emp = EMPLOYEE_SHOP[empName];
-            if (user.points < emp.hirePrice) return reply(`❌ 자금 부족. 필요 금액: ${emp.hirePrice.toLocaleString()}P (보유: ${user.points.toLocaleString()}P)`);
+            if (user.points < emp.hirePrice) return reply(`❌ 자금 부족. 필요 금액: ${formatKRW(emp.hirePrice)} (보유: ${formatKRW(user.points)})`);
 
             user.points -= emp.hirePrice;
             user.employees[empName] = { hiredAt: Date.now() };
             saveData(db);
             return reply(
                 `👔 [채용 완료]\n${empName}님이 입사했습니다!\n` +
-                `💵 영입 비용: -${emp.hirePrice.toLocaleString()}P\n` +
-                `📈 분당 수익: ${emp.perMinute.toLocaleString()}P\n` +
-                `💰 현재 잔액: ${user.points.toLocaleString()}P`
+                `💵 영입 비용: -${formatKRW(emp.hirePrice)}\n` +
+                `📈 분당 수익: ${formatKRW(emp.perMinute)}\n` +
+                `💰 현재 잔액: ${formatKRW(user.points)}`
             );
         }
 
@@ -1060,10 +1116,10 @@ server.on('message', (msg, rinfo) => {
                 const earning = calcEmployeeEarning(emp, info.hiredAt, now);
                 const minutes = Math.floor((now - info.hiredAt) / 60000);
                 totalEarning += earning;
-                msg += `${idx + 1}. ${name} — 근무 ${minutes}분, 미정산 +${earning.toLocaleString()}P\n`;
+                msg += `${idx + 1}. ${name} — 근무 ${minutes}분, 미정산 +${formatKRW(earning)}\n`;
             });
             msg += '─────────────────────\n';
-            msg += `💰 총 미정산 수익: ${totalEarning.toLocaleString()}P\n`;
+            msg += `💰 총 미정산 수익: ${formatKRW(totalEarning)}\n`;
             msg += '➔ !알바출금 으로 전액 수령 가능';
             return reply(msg);
         }
@@ -1082,7 +1138,7 @@ server.on('message', (msg, rinfo) => {
                 if (!emp || !info) return;
                 const earning = calcEmployeeEarning(emp, info.hiredAt, now);
                 totalEarning += earning;
-                detail += `➔ ${name}: +${earning.toLocaleString()}P\n`;
+                detail += `➔ ${name}: +${formatKRW(earning)}\n`;
                 user.employees[name].hiredAt = now;
             });
 
@@ -1095,8 +1151,8 @@ server.on('message', (msg, rinfo) => {
                 '─────────────────────\n' +
                 detail +
                 '─────────────────────\n' +
-                `💰 총 수령액: +${totalEarning.toLocaleString()}P\n` +
-                `💎 현재 잔액: ${user.points.toLocaleString()}P\n` +
+                `💰 총 수령액: +${formatKRW(totalEarning)}\n` +
+                `💎 현재 잔액: ${formatKRW(user.points)}\n` +
                 '⏱️ 모든 직원의 근무 시간이 초기화되었습니다.'
             );
         }
@@ -1120,10 +1176,10 @@ server.on('message', (msg, rinfo) => {
             return reply(
                 `👋 [퇴사 처리 완료] ${empName}님이 퇴사했습니다.\n` +
                 '─────────────────────\n' +
-                `💵 미정산 수익 정산: +${earning.toLocaleString()}P\n` +
-                `💰 퇴직금(영입가 90%): +${severance.toLocaleString()}P (수수료 10% 차감)\n` +
+                `💵 미정산 수익 정산: +${formatKRW(earning)}\n` +
+                `💰 퇴직금(영입가 90%): +${formatKRW(severance)} (수수료 10% 차감)\n` +
                 '─────────────────────\n' +
-                `💎 현재 잔액: ${user.points.toLocaleString()}P`
+                `💎 현재 잔액: ${formatKRW(user.points)}`
             );
         }
 
@@ -1164,9 +1220,15 @@ server.on('message', (msg, rinfo) => {
             const maxChanges = gameSessions[room].maxChanges;
             const changeHint = maxChanges > 0 ? `\n💡 (!바꾸기 입력 시 첫 패 교체, 최대 ${maxChanges}회 가능)` : '';
 
+            const nwSutda = calcNetWorth(user);
             return reply(
-                `🎴 [섯다 판 개설]\n\n👤 플레이어: ${sender}\n🃏 첫 번째 패: [ ${p1.name} ]${earHint}\n\n` +
-                `💵 !배팅 [금액]을 기입하세요. (올인/하프/삥 가능)${changeHint}`
+                `🎴 [섯다 판 개설]\n\n` +
+                `👤 플레이어: ${sender}\n` +
+                `🃏 첫 번째 패: [ ${p1.name} ]${earHint}\n\n` +
+                `💰 최대 배팅 가능: ${formatKRW(user.points)} (보유 현금)\n` +
+                `💎 총 자산: ${formatKRW(nwSutda.total)}\n` +
+                `─────────────────────\n` +
+                `!배팅 [금액] 으로 배팅하세요. (올인/하프/삥/금액 가능)${changeHint}`
             );
         }
 
@@ -1193,10 +1255,10 @@ server.on('message', (msg, rinfo) => {
         if (command === '!배팅') {
             const session = gameSessions[room];
             if (!session || session.player !== sender) return;
-            if (args.length < 1) return reply(`❌ !배팅 금액을 기입하세요. (보유: ${user.points.toLocaleString()}P, 올인/하프/삥 가능)`);
+            if (args.length < 1) return reply(`❌ !배팅 금액을 기입하세요. (보유: ${formatKRW(user.points)}, 올인/하프/삥 가능)`);
             const betAmount = resolveBetAmount(args[0], user.points);
             if (Number.isNaN(betAmount) || betAmount <= 0 || user.points < betAmount) {
-                return reply(`❌ 배팅 오류. (보유: ${user.points.toLocaleString()}P)`);
+                return reply(`❌ 배팅 오류. (보유: ${formatKRW(user.points)})`);
             }
 
             const pRes = session.pResult;
@@ -1209,17 +1271,17 @@ server.on('message', (msg, rinfo) => {
 
             if (pRes.score > dRes.score) {
                 user.points += betAmount;
-                finalMsg += `🏆 승리! +${betAmount.toLocaleString()}P`;
+                finalMsg += `🏆 승리! +${formatKRW(betAmount)}`;
             } else if (pRes.score < dRes.score) {
                 user.points -= betAmount;
-                finalMsg += `💸 패배... -${betAmount.toLocaleString()}P`;
+                finalMsg += `💸 패배... -${formatKRW(betAmount)}`;
             } else {
                 finalMsg += '🤝 무승부 비김.';
             }
 
             saveData(db);
             delete gameSessions[room];
-            return reply(`${finalMsg}\n💰 내 지갑: ${user.points.toLocaleString()}P`);
+            return reply(`${finalMsg}\n💰 내 지갑: ${formatKRW(user.points)}`);
         }
 
         // ── 경마: 베팅 판 개설 ─────────────────────
@@ -1228,20 +1290,20 @@ server.on('message', (msg, rinfo) => {
             horseRace = { host: sender, pot: 0, bets: {}, horseTotals: {} };
             let intro = `🐎 [경마 베팅장 개장!] (개장자: ${sender})\n\n📋 출전마 명단\n`;
             for (const h of HORSES) intro += `  ${h.no}번 ${h.name}\n`;
-            intro += `\n💵 !경마베팅 [말번호] [금액] 으로 참가 (보유: ${user.points.toLocaleString()}P, 올인/하프/삥 가능)\n📊 !경마현황  🚦 !경마출발  ❌ !경마취소`;
+            intro += `\n💵 !경마베팅 [말번호] [금액] 으로 참가 (보유: ${formatKRW(user.points)}, 올인/하프/삥 가능)\n📊 !경마현황  🚦 !경마출발  ❌ !경마취소`;
             return reply(intro);
         }
 
         // ── 경마: 베팅 참가 (요청 4, 5, 8) ─────────
         if (command === '!경마베팅') {
             if (!horseRace) return reply('❌ 진행 중인 경마 베팅이 없습니다. !경마시작');
-            if (args.length < 2) return reply(`❌ 양식: !경마베팅 [말번호] [금액] (보유: ${user.points.toLocaleString()}P)`);
+            if (args.length < 2) return reply(`❌ 양식: !경마베팅 [말번호] [금액] (보유: ${formatKRW(user.points)})`);
             const horseNo = parseInt(args[0], 10);
             const amount = resolveBetAmount(args[1], user.points);
             if (!HORSES.some(h => h.no === horseNo)) return reply('❌ 말 번호는 1~5 입니다.');
             if (Number.isNaN(amount) || amount <= 0) return reply('❌ 베팅 금액 오류.');
             if (horseRace.bets[sender]) return reply('⚠️ 이미 베팅했습니다. (1인 1마)');
-            if (user.points < amount) return reply(`❌ 잔액 부족. 보유: ${user.points.toLocaleString()}P`);
+            if (user.points < amount) return reply(`❌ 잔액 부족. 보유: ${formatKRW(user.points)}`);
 
             user.points -= amount;
             horseRace.pot += amount;
@@ -1250,17 +1312,17 @@ server.on('message', (msg, rinfo) => {
             saveData(db);
 
             const horse = HORSES.find(h => h.no === horseNo);
-            return reply(`✅ [베팅 접수] ${sender} → ${horseNo}번 ${horse.name}\n💵 베팅액: ${amount.toLocaleString()}P\n🍯 현재 총 판돈: ${horseRace.pot.toLocaleString()}P`);
+            return reply(`✅ [베팅 접수] ${sender} → ${horseNo}번 ${horse.name}\n💵 베팅액: ${formatKRW(amount)}\n🍯 현재 총 판돈: ${formatKRW(horseRace.pot)}`);
         }
 
         // ── 경마: 현황판 ────────────────────────────
         if (command === '!경마현황') {
             if (!horseRace) return reply('❌ 진행 중인 경마가 없습니다.');
-            let board = `📊 [경마 베팅 현황]\n🍯 총 판돈: ${horseRace.pot.toLocaleString()}P\n\n`;
+            let board = `📊 [경마 베팅 현황]\n🍯 총 판돈: ${formatKRW(horseRace.pot)}\n\n`;
             for (const h of HORSES) {
                 const total = horseRace.horseTotals[h.no] || 0;
                 const odds = total > 0 ? (horseRace.pot / total).toFixed(2) : '—';
-                board += `${h.no}번 ${h.name}: ${total.toLocaleString()}P (배당 x${odds})\n`;
+                board += `${h.no}번 ${h.name}: ${formatKRW(total)} (배당 x${odds})\n`;
             }
             const players = Object.keys(horseRace.bets);
             board += `\n👥 참가자(${players.length}명): ${players.length ? players.join(', ') : '없음'}`;
@@ -1292,7 +1354,7 @@ server.on('message', (msg, rinfo) => {
                 for (const [name, bet] of Object.entries(horseRace.bets)) {
                     const refund = Math.floor(bet.amount * 0.5);
                     ensureUser(db, name).points += refund;
-                    payoutMsg += `\n💸 ${name}: +${refund.toLocaleString()}P 환급 (-${(bet.amount - refund).toLocaleString()}P 손실)`;
+                    payoutMsg += `\n💸 ${name}: +${formatKRW(refund)} 환급 (-${formatKRW((bet.amount - refund))}P 손실)`;
                 }
             } else {
                 const winStake = winners.reduce((sum, [, b]) => sum + b.amount, 0);
@@ -1301,14 +1363,14 @@ server.on('message', (msg, rinfo) => {
                     const payout = Math.floor(horseRace.pot * (bet.amount / winStake));
                     ensureUser(db, name).points += payout;
                     const profit = payout - bet.amount;
-                    payoutMsg += `\n🎉 ${name}: +${payout.toLocaleString()}P (순익 ${profit >= 0 ? '+' : ''}${profit.toLocaleString()}P)`;
+                    payoutMsg += `\n🎉 ${name}: +${formatKRW(payout)} (순익 ${profit >= 0 ? '+' : ''}${formatKRW(profit)})`;
                 }
             }
 
             saveData(db);
             const potSnapshot = horseRace.pot;
             horseRace = null;
-            return reply(buildRaceBoard(result) + payoutMsg + `\n\n🍯 총 판돈: ${potSnapshot.toLocaleString()}P`);
+            return reply(buildRaceBoard(result) + payoutMsg + `\n\n🍯 총 판돈: ${formatKRW(potSnapshot)}`);
         }
 
         // ── 숫자맞추기: 게임 개설 ──────────────────
@@ -1327,7 +1389,7 @@ server.on('message', (msg, rinfo) => {
                 `👤 개설자: ${sender}\n` +
                 `🎯 범위: 1 ~ ${n}\n` +
                 `💰 배율: ${multiplier}배\n\n` +
-                `💵 !숫자배팅 [금액] [숫자] 로 참여하세요! (보유: ${user.points.toLocaleString()}P, 올인/하프/삥 가능)\n` +
+                `💵 !숫자배팅 [금액] [숫자] 로 참여하세요! (보유: ${formatKRW(user.points)}, 올인/하프/삥 가능)\n` +
                 `예: !숫자배팅 5000 ${Math.ceil(n / 2)}`
             );
         }
@@ -1336,13 +1398,13 @@ server.on('message', (msg, rinfo) => {
         if (command === '!숫자배팅') {
             const session = numberGuessSessions[room];
             if (!session) return reply('❌ 진행 중인 숫자맞추기가 없습니다. !숫자맞추기 [개수] 로 시작하세요.');
-            if (args.length < 2) return reply(`❌ 양식: !숫자배팅 [금액] [숫자] (보유: ${user.points.toLocaleString()}P)`);
+            if (args.length < 2) return reply(`❌ 양식: !숫자배팅 [금액] [숫자] (보유: ${formatKRW(user.points)})`);
 
             const betAmount = resolveBetAmount(args[0], user.points);
             const guess = parseInt(args[1], 10);
 
             if (Number.isNaN(betAmount) || betAmount <= 0) return reply('❌ 배팅 금액이 올바르지 않습니다.');
-            if (user.points < betAmount) return reply(`❌ 잔액 부족. 보유: ${user.points.toLocaleString()}P`);
+            if (user.points < betAmount) return reply(`❌ 잔액 부족. 보유: ${formatKRW(user.points)}`);
             if (Number.isNaN(guess) || guess < 1 || guess > session.range) {
                 return reply(`❌ 숫자는 1 ~ ${session.range} 사이로 입력해주세요.`);
             }
@@ -1359,15 +1421,15 @@ server.on('message', (msg, rinfo) => {
             if (isWin) {
                 const payout = Math.floor(betAmount * session.multiplier);
                 user.points += payout - betAmount;
-                resultMsg += `🏆 정답입니다! 배율 ${session.multiplier}배 적용\n💵 획득: +${payout.toLocaleString()}P`;
+                resultMsg += `🏆 정답입니다! 배율 ${session.multiplier}배 적용\n💵 획득: +${formatKRW(payout)}`;
             } else {
                 user.points -= betAmount;
-                resultMsg += `💸 아쉽네요, 틀렸습니다.\n💵 손실: -${betAmount.toLocaleString()}P`;
+                resultMsg += `💸 아쉽네요, 틀렸습니다.\n💵 손실: -${formatKRW(betAmount)}`;
             }
 
             saveData(db);
             delete numberGuessSessions[room];
-            return reply(`${resultMsg}\n💰 내 지갑: ${user.points.toLocaleString()}P`);
+            return reply(`${resultMsg}\n💰 내 지갑: ${formatKRW(user.points)}`);
         }
 
         // ── 숫자맞추기: 취소 (개설자만) ────────────
@@ -1382,11 +1444,11 @@ server.on('message', (msg, rinfo) => {
         // ── 블랙잭: 시작 (요청 4, 5, 8) ─────────────
         if (command === '!블랙잭') {
             if (blackjackSessions[room]) return reply('⚠️ 이미 진행 중인 블랙잭이 있습니다. !히트 / !스탠드 로 진행하세요.');
-            if (args.length < 1) return reply(`❌ 양식: !블랙잭 [배팅액] (보유: ${user.points.toLocaleString()}P, 올인/하프 가능)`);
+            if (args.length < 1) return reply(`❌ 양식: !블랙잭 [배팅액] (보유: ${formatKRW(user.points)}, 올인/하프 가능)`);
 
             const betAmount = resolveBetAmount(args[0], user.points);
             if (Number.isNaN(betAmount) || betAmount <= 0) return reply('❌ 배팅 금액이 올바르지 않습니다.');
-            if (user.points < betAmount) return reply(`❌ 잔액 부족. 보유: ${user.points.toLocaleString()}P`);
+            if (user.points < betAmount) return reply(`❌ 잔액 부족. 보유: ${formatKRW(user.points)}`);
 
             const playerHand = [drawBlackjackCard(), drawBlackjackCard()];
             const dealerHand = [drawBlackjackCard(), drawBlackjackCard()];
@@ -1408,7 +1470,7 @@ server.on('message', (msg, rinfo) => {
 
             const pScore = calcHandValue(playerHand);
             let msg =
-                `🃏 [블랙잭 시작] (배팅 ${betAmount.toLocaleString()}P)\n` +
+                `🃏 [블랙잭 시작] (배팅 ${formatKRW(betAmount)})\n` +
                 `👤 ${sender}님의 패: ${handDisplay(playerHand)} (${pScore})\n` +
                 `🤖 딜러 패: ${cardDisplay(dealerHand[0])} 🂠 (1장 비공개)\n\n`;
 
@@ -1421,8 +1483,8 @@ server.on('message', (msg, rinfo) => {
                     msg +
                     `🤖 딜러 패 공개: ${handDisplay(dealerHand)} (${judged.dScore})\n` +
                     `──────────────────\n` +
-                    `${resultLabel(judged.resultType)} ${judged.payout >= 0 ? '+' : ''}${judged.payout.toLocaleString()}P\n` +
-                    `💰 내 지갑: ${user.points.toLocaleString()}P`
+                    `${resultLabel(judged.resultType)} ${judged.payout >= 0 ? '+' : ''}${formatKRW(judged.payout)}\n` +
+                    `💰 내 지갑: ${formatKRW(user.points)}`
                 );
             }
 
@@ -1478,7 +1540,7 @@ server.on('message', (msg, rinfo) => {
 
             const hand = session.hands[session.activeHandIdx];
             if (!hand || hand.done) return reply('❌ 이미 종료된 패입니다.');
-            if (user.points < session.bet) return reply(`❌ 더블다운에 필요한 자금이 부족합니다. (추가 ${session.bet.toLocaleString()}P 필요, 보유: ${user.points.toLocaleString()}P)`);
+            if (user.points < session.bet) return reply(`❌ 더블다운에 필요한 자금이 부족합니다. (추가 ${formatKRW(session.bet)} 필요, 보유: ${formatKRW(user.points)})`);
 
             user.points -= session.bet;
             hand.doubled = true;
@@ -1487,7 +1549,7 @@ server.on('message', (msg, rinfo) => {
             session.canFirstAction = false;
 
             const score = calcHandValue(hand.cards);
-            let msg = `💰 [더블다운] 배팅액이 ${session.bet.toLocaleString()}P 추가되어 총 ${(session.bet * 2).toLocaleString()}P!\n` +
+            let msg = `💰 [더블다운] 배팅액이 ${formatKRW(session.bet)} 추가되어 총 ${formatKRW((session.bet * 2))}P!\n` +
                 `🃏 ${handDisplay(hand.cards)} (${score})${score > 21 ? ' 💥 버스트!' : ''}\n`;
 
             saveData(db);
@@ -1504,7 +1566,7 @@ server.on('message', (msg, rinfo) => {
             if (hand.cards.length !== 2 || hand.cards[0].rank !== hand.cards[1].rank) {
                 return reply('❌ 같은 숫자 2장일 때만 스플릿할 수 있습니다.');
             }
-            if (user.points < session.bet) return reply(`❌ 스플릿에 필요한 자금이 부족합니다. (추가 ${session.bet.toLocaleString()}P 필요, 보유: ${user.points.toLocaleString()}P)`);
+            if (user.points < session.bet) return reply(`❌ 스플릿에 필요한 자금이 부족합니다. (추가 ${formatKRW(session.bet)} 필요, 보유: ${formatKRW(user.points)})`);
 
             user.points -= session.bet;
             saveData(db);
@@ -1521,7 +1583,7 @@ server.on('message', (msg, rinfo) => {
 
             const h1 = session.hands[0];
             return reply(
-                `✂️ [스플릿 완료] 배팅액이 ${session.bet.toLocaleString()}P 추가되어 총 ${(session.bet * 2).toLocaleString()}P (각 패당 ${session.bet.toLocaleString()}P)\n\n` +
+                `✂️ [스플릿 완료] 배팅액이 ${formatKRW(session.bet)} 추가되어 총 ${formatKRW((session.bet * 2))}P (각 패당 ${formatKRW(session.bet)})\n\n` +
                 `🃏 [1번째 패] ${handDisplay(h1.cards)} (${calcHandValue(h1.cards)})\n` +
                 `💵 !히트 / !스탠드 / !더블다운 으로 1번째 패를 먼저 진행하세요.`
             );
@@ -1547,8 +1609,8 @@ server.on('message', (msg, rinfo) => {
             return reply(
                 `🛡️ [운영자 처리 완료]\n` +
                 `👤 대상: ${targetName}\n` +
-                `💵 변동: ${amount >= 0 ? '+' : ''}${amount.toLocaleString()}P\n` +
-                `📊 ${before.toLocaleString()}P → ${target.points.toLocaleString()}P`
+                `💵 변동: ${amount >= 0 ? '+' : ''}${formatKRW(amount)}\n` +
+                `📊 ${formatKRW(before)} → ${formatKRW(target.points)}`
             );
         }
 
@@ -1571,7 +1633,7 @@ server.on('message', (msg, rinfo) => {
             return reply(
                 `🛡️ [운영자 처리 완료]\n` +
                 `👤 대상: ${targetName}\n` +
-                `📊 포인트 강제 설정: ${before.toLocaleString()}P → ${target.points.toLocaleString()}P`
+                `📊 포인트 강제 설정: ${formatKRW(before)} → ${formatKRW(target.points)}`
             );
         }
 
@@ -1593,7 +1655,7 @@ server.on('message', (msg, rinfo) => {
                 `🛡️ [운영자 처리 완료]\n` +
                 `👤 대상: ${targetName}\n` +
                 `🔄 전체 초기화 완료 (포인트/명품/코인/직원/장비 전부 리셋)\n` +
-                `📊 ${beforePoints.toLocaleString()}P → 2,000P`
+                `📊 ${formatKRW(beforePoints)} → 2,000P`
             );
         }
 
@@ -1603,7 +1665,7 @@ server.on('message', (msg, rinfo) => {
             currentQuiz = null;
             user.points += 1000;
             saveData(db);
-            return reply(`🎊 정답입니다! ${sender}님에게 기습 상금 1,000P가 지급되었습니다!\n💰 내 지갑: ${user.points.toLocaleString()}P`);
+            return reply(`🎊 정답입니다! ${sender}님에게 기습 상금 1,000P가 지급되었습니다!\n💰 내 지갑: ${formatKRW(user.points)}`);
         }
 
     } catch (e) {
