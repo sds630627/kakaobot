@@ -1652,7 +1652,7 @@ server.on('message', (msg, rinfo) => {
             );
         }
 
-        // ── 운영자: 유저 전체 초기화 ─────────────────
+        // ── 운영자: 유저 전체 초기화 ────────────────
         if (command === '!관리자초기화') {
             if (sender !== ADMIN_NAME) return reply('❌ 운영자 권한이 필요합니다.');
             if (args.length < 1) return reply('❌ 양식: !관리자초기화 [닉네임]\n예: !관리자초기화 홍길동');
