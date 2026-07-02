@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+const PORT = 3001;
 const DATA_FILE = path.join(__dirname, 'users.json');
 const MARKET_FILE = path.join(__dirname, 'market.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -117,23 +117,8 @@ const MAN = 10000;
 const EOK = 100000000;
 const JO = 1000000000000;
 
-const DEFAULT_LUXURY = {
-    '롤렉스 서브마리너':  { basePrice: 5  * MAN,  currentPrice: 5  * MAN,  type: '명품시계',  unit: MAN },
-    '오메가 씨마스터':    { basePrice: 8  * MAN,  currentPrice: 8  * MAN,  type: '명품시계',  unit: MAN },
-    '까르띠에 산토스':    { basePrice: 15 * MAN,  currentPrice: 15 * MAN,  type: '명품시계',  unit: MAN },
-    '구찌 가방':          { basePrice: 3  * MAN,  currentPrice: 3  * MAN,  type: '명품백',    unit: MAN },
-    '에르메스 버킨백':    { basePrice: 30 * MAN,  currentPrice: 30 * MAN,  type: '명품백',    unit: MAN },
-    '루이비통 트렁크':    { basePrice: 20 * MAN,  currentPrice: 20 * MAN,  type: '명품백',    unit: MAN },
-    '테슬라 모델3':       { basePrice: 55 * MAN,  currentPrice: 55 * MAN,  type: '전기차',    unit: 10 * MAN },
-    '포르쉐 카이엔':      { basePrice: 120 * MAN, currentPrice: 120 * MAN, type: '스포츠카',  unit: 10 * MAN },
-    '페라리 로마':        { basePrice: 300 * MAN, currentPrice: 300 * MAN, type: '슈퍼카',    unit: 10 * MAN },
-    '람보르기니 우라칸':  { basePrice: 450 * MAN, currentPrice: 450 * MAN, type: '슈퍼카',    unit: 10 * MAN },
-    '한강뷰 오피스텔':    { basePrice: 200 * MAN, currentPrice: 200 * MAN, type: '부동산',    unit: 10 * MAN },
-    '강남 아파트':        { basePrice: 500 * MAN, currentPrice: 500 * MAN, type: '부동산',    unit: 10 * MAN },
-    '제주도 단독주택':    { basePrice: 350 * MAN, currentPrice: 350 * MAN, type: '부동산',    unit: 10 * MAN },
-    '개인 요트':          { basePrice: 800 * MAN, currentPrice: 800 * MAN, type: '레저',      unit: 50 * MAN },
-    '프라이빗 제트':      { basePrice: EOK,        currentPrice: EOK,        type: '항공',      unit: 100 * MAN }
-};
+// DEFAULT_LUXURY: RPG 개편으로 제거됨
+
 
 const DEFAULT_COIN = {
     '성빈코인': { currentPrice: 1000, lastPrice: 1000, desc: '하이리스크 코인' },
@@ -387,7 +372,7 @@ function getEarnedTitles(user) {
 // ═══════════════════════════════════════════════════════
 // 3. 런타임 상태
 // ═══════════════════════════════════════════════════════
-let LUXURY_MARKET = {};
+let LUXURY_MARKET = {}; // 레거시 (빈 객체로 유지, 삭제 후 하위 참조 안전)
 let COIN_MARKET = {};
 const gameSessions = {};      // 섯다
 const blackjackSessions = {}; // 블랙잭
@@ -424,11 +409,8 @@ function loadMarket() {
     try {
         if (fs.existsSync(MARKET_FILE)) {
             const data = JSON.parse(fs.readFileSync(MARKET_FILE, 'utf8'));
-            LUXURY_MARKET = data.luxury || {};
+            LUXURY_MARKET = {}; // 사치품 제거됨
             COIN_MARKET = data.coin || {};
-            for (const [k, v] of Object.entries(DEFAULT_LUXURY)) {
-                if (!LUXURY_MARKET[k]) LUXURY_MARKET[k] = JSON.parse(JSON.stringify(v));
-            }
             for (const [k, v] of Object.entries(DEFAULT_COIN)) {
                 if (!COIN_MARKET[k]) COIN_MARKET[k] = JSON.parse(JSON.stringify(v));
             }
@@ -438,7 +420,7 @@ function loadMarket() {
     } catch (e) {
         console.error('market.json 로드 실패:', e.message);
     }
-    LUXURY_MARKET = JSON.parse(JSON.stringify(DEFAULT_LUXURY));
+    LUXURY_MARKET = {};
     COIN_MARKET = JSON.parse(JSON.stringify(DEFAULT_COIN));
     saveMarket();
 }
@@ -461,7 +443,6 @@ function createDefaultUser() {
         souls: 0,            // 소울 (8단계 이상 레이드 확률 획득)
         lastCheckIn: '',
         items: [],
-        luxuries: {},
         coins: {},
         gachaItems: [],
         boxes: {},
@@ -507,7 +488,7 @@ function ensureUser(db, name) {
     if (typeof u.points !== 'number' || isNaN(u.points)) u.points = 2000;
     if (typeof u.lastCheckIn !== 'string') u.lastCheckIn = '';
     if (!Array.isArray(u.items)) u.items = [];
-    if (!u.luxuries || typeof u.luxuries !== 'object') u.luxuries = {};
+    if (u.luxuries) delete u.luxuries; // 사치품 제거됨
     if (!u.coins || typeof u.coins !== 'object') u.coins = {};
     // 기존 employees 필드는 삭제 (RPG 개편으로 제거됨)
     if (u.employees) delete u.employees;
@@ -551,9 +532,6 @@ function ensureUser(db, name) {
         if (!u.stats[game]) u.stats[game] = { wins: 0, losses: 0, draws: 0 };
     }
 
-    for (const key of Object.keys(u.luxuries)) {
-        u.luxuries[key] = normalizeHolding(u.luxuries[key]);
-    }
     for (const c of COIN_NAMES) {
         u.coins[c] = normalizeHolding(u.coins[c] || 0);
     }
@@ -719,11 +697,6 @@ function calcCharacterStat(user) {
 
 // 총자산 계산
 function calcNetWorth(user) {
-    let luxuryValue = 0;
-    for (const [name, h] of Object.entries(user.luxuries || {})) {
-        const count = h.count || 0;
-        if (count > 0 && LUXURY_MARKET[name]) luxuryValue += LUXURY_MARKET[name].currentPrice * count;
-    }
     let coinValue = 0;
     for (const [name, h] of Object.entries(user.coins || {})) {
         const count = h.count || 0;
@@ -732,11 +705,11 @@ function calcNetWorth(user) {
     const debt = calcLoanDebt(user.loan);
     return {
         cash: user.points,
-        luxuryValue,
+        luxuryValue: 0, // 레거시 필드 유지 (참조 안전)
         coinValue,
-        empEarning: 0, // 레거시 필드 유지 (다른 곳 참조 대비)
+        empEarning: 0,
         debt,
-        total: user.points + luxuryValue + coinValue - debt
+        total: user.points + coinValue - debt
     };
 }
 
@@ -765,22 +738,7 @@ function displayName(user, name) {
     return best.lvl.display(name);
 }
 
-// 사치품 가격 변동 (unit 기반 라운딩)
-function roundToUnit(price, unit) {
-    return Math.round(price / unit) * unit;
-}
-
 // 번호→이름 매핑
-function getLuxuryList() { return Object.entries(LUXURY_MARKET); }
-function resolveLuxuryName(arg) {
-    const list = getLuxuryList();
-    if (/^\d+$/.test(arg)) {
-        const idx = parseInt(arg, 10) - 1;
-        return (idx >= 0 && idx < list.length) ? list[idx][0] : null;
-    }
-    return LUXURY_MARKET[arg] ? arg : null;
-}
-
 // getEmployeeList: 레거시 제거됨 (직원 시스템 폐지)
 // resolveEmployeeName: 레거시 제거됨
 
@@ -981,17 +939,6 @@ function updateCoinPrices(broadcastFn) {
         }
         saveMarket();
 
-        // 명품 시세도 소폭 변동 (unit 단위로 반올림)
-        for (const key in LUXURY_MARKET) {
-            const item = LUXURY_MARKET[key];
-            const change = (Math.random()*0.1)-0.05;
-            let nPrice = item.currentPrice * (1+change);
-            const floor = item.basePrice*0.5, cap=item.basePrice*2;
-            nPrice = Math.max(floor, Math.min(cap, nPrice));
-            item.currentPrice = roundToUnit(nPrice, item.unit);
-        }
-        saveMarket();
-
         let report = `\n📊 [시세 변동 완료]\n`;
         for (const key in COIN_MARKET) {
             const diff = COIN_MARKET[key].currentPrice - COIN_MARKET[key].lastPrice;
@@ -1011,14 +958,6 @@ function seizeAssets(db, name) {
     user.gachaItems = [];
     user.boxes = {};
     user.items = [];
-
-    // 명품 팔기 (10% 수수료)
-    for (const [n, h] of Object.entries(user.luxuries)) {
-        if (h.count>0 && LUXURY_MARKET[n]) {
-            user.points += Math.floor(LUXURY_MARKET[n].currentPrice * 0.9 * h.count);
-            h.count=0; h.avgPrice=0;
-        }
-    }
 
     // 코인 팔기
     for (const [n, h] of Object.entries(user.coins)) {
@@ -1267,7 +1206,6 @@ server.on('message', (msg, rinfo) => {
             for (const n of names) db[n] = createDefaultUser();
             saveData(db);
             // 마켓도 초기화
-            LUXURY_MARKET = JSON.parse(JSON.stringify(DEFAULT_LUXURY));
             COIN_MARKET = JSON.parse(JSON.stringify(DEFAULT_COIN));
             saveMarket();
             return reply(`🏁 [시즌 초기화 완료]\n총 ${names.length}명의 데이터가 초기화되었습니다.\n새 시즌을 시작합니다!`);
@@ -1284,7 +1222,6 @@ server.on('message', (msg, rinfo) => {
                 ' !내정보 — 현금·자산 요약\n' +
                 ' !내아이템 — 보유 아이템\n' +
                 ' !내코인 — 코인 현황\n' +
-                ' !내사치품 — 명품·차량 현황\n' +
                 ' !랭킹 — 자산 순위\n\n' +
                 '🎰 [게임]\n' +
                 ' !섯다 [금액] — 섯다 시작\n' +
@@ -1302,11 +1239,6 @@ server.on('message', (msg, rinfo) => {
                 ' !코인시세 — 코인 시세 확인\n' +
                 ' !매수 [코인명] [금액or수량or풀]\n' +
                 ' !매도 [코인명] [금액or수량or풀]\n\n' +
-                '🏪 [사치품]\n' +
-                ' !사치품시세 — 명품·차량 시세\n' +
-                ' !구매 [번호or이름] — 사치품 구매\n' +
-                ' !판매 [번호or이름] — 사치품 판매\n' +
-                ' !모두팔기 — 전체 사치품 매각\n\n' +
                 '⚔️ [RPG - Phase 1]\n' +
                 ' !내스탯 — 캐릭터 스탯 확인\n' +
                 ' !파티 — 편성된 파티 확인\n' +
@@ -1380,8 +1312,6 @@ server.on('message', (msg, rinfo) => {
 `;
             msg += `━━━━━━━━━━━━━━━━━━━━
 `;
-            msg += `📊 명품가치: ${formatKRW(nw.luxuryValue)}
-`;
             msg += `🪙 코인가치: ${formatKRW(nw.coinValue)}
 `;
             if (debt > 0) msg += `🏦 대출채무: -${formatKRW(debt)}
@@ -1430,21 +1360,6 @@ server.on('message', (msg, rinfo) => {
                 msg += `   평단 ${formatKRW(h.avgPrice)} / 현재 ${formatKRW(cur)}${rate}\n`;
             }
             if (!any) msg += '보유 코인 없음';
-            return reply(msg);
-        }
-
-        if (cmd === '!내사치품') {
-            let msg = `👑 [${sender}님의 사치품]\n─────────────────────\n`;
-            let any = false;
-            for (const [name, h] of Object.entries(user.luxuries)) {
-                if (!h||h.count<=0) continue;
-                any = true;
-                const cur = LUXURY_MARKET[name]?.currentPrice || 0;
-                const rate = formatChangeRate(h.avgPrice, cur);
-                msg += `${name} x${h.count}\n`;
-                msg += `   평단 ${formatKRW(h.avgPrice)} / 현재 ${formatKRW(cur)}${rate}\n`;
-            }
-            if (!any) msg += '보유 사치품 없음';
             return reply(msg);
         }
 
@@ -1596,62 +1511,6 @@ server.on('message', (msg, rinfo) => {
         }
 
         // ══════════════════════════════════════════════
-        // 사치품 시세 / 구매 / 판매
-        // ══════════════════════════════════════════════
-        if (cmd === '!사치품시세') {
-            let m = '🏪 [사치품 시세]\n─────────────────────\n';
-            getLuxuryList().forEach(([name, info], idx) => {
-                m += `${idx+1}. ${name} [${info.type}]\n   ${formatKRW(info.currentPrice)}\n`;
-            });
-            m += '\n!구매 [번호] / !판매 [번호]';
-            return reply(m);
-        }
-
-        if (cmd === '!구매') {
-            if (args.length<1) return reply('❌ !구매 [번호or이름]');
-            const luxName = resolveLuxuryName(args[0]);
-            if (!luxName) return reply('❌ 존재하지 않는 사치품입니다.');
-            const item = LUXURY_MARKET[luxName];
-            if (user.points < item.currentPrice)
-                return reply(`❌ 자금 부족. 필요: ${formatKRW(item.currentPrice)} (보유: ${formatKRW(user.points)})`);
-            user.points -= item.currentPrice;
-            if (!user.luxuries[luxName]) user.luxuries[luxName]={count:0,avgPrice:0};
-            updateAvgBuy(user.luxuries[luxName], 1, item.currentPrice);
-            saveData(db);
-            return reply(`🏎️ [구매 완료]\n${luxName}\n지출: -${formatKRW(item.currentPrice)}\n평단: ${formatKRW(user.luxuries[luxName].avgPrice)}\n잔액: ${formatKRW(user.points)}`);
-        }
-
-        if (cmd === '!판매') {
-            if (args.length<1) return reply('❌ !판매 [번호or이름]');
-            const luxName = resolveLuxuryName(args[0]);
-            if (!luxName) return reply('❌ 존재하지 않는 사치품입니다.');
-            const h = user.luxuries[luxName];
-            if (!h||h.count<=0) return reply('❌ 보유 자산이 없습니다.');
-            const sell = Math.floor(LUXURY_MARKET[luxName].currentPrice * 0.9);
-            h.count -= 1;
-            if (h.count===0) h.avgPrice=0;
-            user.points += sell;
-            saveData(db);
-            return reply(`💸 [판매 완료]\n${luxName}\n환급: +${formatKRW(sell)} (수수료 10%)\n잔액: ${formatKRW(user.points)}`);
-        }
-
-        if (cmd === '!모두팔기') {
-            const owned = Object.entries(user.luxuries).filter(([,h])=>h.count>0);
-            if (owned.length===0) return reply('❌ 보유한 사치품이 없습니다.');
-            let total=0, detail='';
-            for (const [name, h] of owned) {
-                const item = LUXURY_MARKET[name];
-                const unit = item ? Math.floor(item.currentPrice*0.9) : 0;
-                const sub = unit * h.count;
-                total += sub;
-                detail += `➔ ${name} x${h.count} → +${formatKRW(sub)}\n`;
-                user.luxuries[name] = {count:0,avgPrice:0};
-            }
-            user.points += total;
-            saveData(db);
-            return reply(`💸 [일괄 매각]\n─────────────────────\n${detail}─────────────────────\n총 환급: +${formatKRW(total)} (수수료 10%)\n잔액: ${formatKRW(user.points)}`);
-        }
-
         // ══════════════════════════════════════════════
         // 코인 시세 / 매수 / 매도
         // ══════════════════════════════════════════════
