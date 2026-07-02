@@ -558,6 +558,25 @@ function getEquipmentEffectValue(user, effectId) {
     return total;
 }
 
+// HP 게이지 — 20칸 블록바 + % (카카오봇 메시지에서 가장 잘 보이는 형태)
+function hpBar(current, max, enraged = false) {
+    const cur = Math.max(0, current);
+    const ratio = max > 0 ? cur / max : 0;
+    const pct = Math.round(ratio * 100);
+    const BARS = 20;
+    const filled = Math.round(ratio * BARS);
+    const empty  = BARS - filled;
+    // 체력 구간별 블록 색
+    const fillChar = enraged ? '🟥' : pct > 50 ? '🟩' : pct > 25 ? '🟨' : '🟥';
+    const emptyChar = '⬜';
+    // 블록 이모지가 2바이트라 20개면 너무 길 수 있음 → 10칸 사용
+    const B = 10;
+    const f = Math.round(ratio * B);
+    const e = B - f;
+    const bar = fillChar.repeat(f) + emptyChar.repeat(e);
+    return `${bar} ${pct}% (${cur.toLocaleString()}/${max.toLocaleString()})`;
+}
+
 // 레이드 한 턴 전투 계산
 function raidTurn(user, session, statIn) {
     let stat = { ...statIn }; // mutable copy
@@ -626,7 +645,7 @@ function raidTurn(user, session, statIn) {
     let totalDmg = 0;
     for (let i = 0; i < hitCount; i++) totalDmg += dmg;
     session.bossHp = Math.max(0, session.bossHp - totalDmg);
-    log.push(`🗡️ 플레이어: ${totalDmg} 피해${isCrit ? ' (크리!)' : ''}${hitCount > 1 ? ` (${hitCount}타)` : ''} → 보스 HP ${session.bossHp}/${boss.maxHp}`);
+    log.push(`🗡️ ${totalDmg} 피해${isCrit ? ' (크리!)' : ''}${hitCount > 1 ? ` (${hitCount}타)` : ''}`);
 
     // 흡혈
     if (lifestealPct > 0 && totalDmg > 0) {
@@ -659,7 +678,7 @@ function raidTurn(user, session, statIn) {
         const damageReduction = guardPct + (1 - 1 / skills.defMult);
         let bossDmg = Math.max(1, Math.floor(bossAtk * (1 - Math.min(0.8, damageReduction))));
         session.hp -= bossDmg;
-        log.push(`👹 보스: ${bossDmg} 피해 → 내 HP ${Math.max(0, session.hp)}/${session.maxHp}`);
+        log.push(`👹 보스: ${bossDmg} 피해`);
 
         // 반격(가시)
         if (thornsPct > 0) {
@@ -2696,10 +2715,12 @@ server.on('message', (msg, rinfo) => {
             let m = `⚔️ [레이드 시작] ${EQUIP_GRADE_EMOJI[boss.grade]||''}${boss.name}\n`;
             m += `${boss.desc}\n`;
             m += `─────────────────────\n`;
-            m += `👹 보스 HP: ${boss.maxHp.toLocaleString()} / 공격: ${boss.atk} / 방어: ${boss.def}\n`;
+            m += `👹 보스\n`;
+            m += `${hpBar(boss.maxHp, boss.maxHp)} / 공격:${boss.atk} 방어:${boss.def}\n`;
             m += `⚠️ HP ${Math.floor(boss.enrageHp*100)}% 이하 광폭화 (공격력 ×${boss.enrageAtkMult})\n`;
             m += `─────────────────────\n`;
-            m += `🧑 내 HP: ${stat.maxHp} / 전투력: ${power.toLocaleString()}\n`;
+            m += `❤️ 내 HP\n`;
+            m += `${hpBar(stat.maxHp, stat.maxHp)} / 전투력: ${power.toLocaleString()}\n`;
             if (user.activeParty.length > 0) m += `👥 파티: ${user.activeParty.join(', ')}\n`;
             m += `─────────────────────\n`;
             m += `!공격 — 일반 공격\n!방어 — 방어 자세 (다음 턴 받는 피해 40% 감소)\n!후퇴 — 레이드 포기`;
@@ -2739,8 +2760,10 @@ server.on('message', (msg, rinfo) => {
             if (defModeActive) m += `🛡️ 방어 자세 발동! (받는 피해 40% 감소)\n`;
             m += log.join('\n') + '\n';
             m += `─────────────────────\n`;
-            m += `👹 보스 HP: ${Math.max(0, session.bossHp)}/${session.boss.maxHp}\n`;
-            m += `❤️ 내 HP: ${Math.max(0, session.hp)}/${session.maxHp}\n`;
+            m += `👹 ${session.boss.name}\n`;
+            m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}${session.enraged ? ' 💢' : ''}\n`;
+            m += `❤️ 내 HP\n`;
+            m += `${hpBar(session.hp, session.maxHp)}\n`;
 
             if (result === 'win') {
                 delete raidSessions[sessionKey];
@@ -2779,8 +2802,10 @@ server.on('message', (msg, rinfo) => {
             if (!session) return reply('❌ 진행 중인 레이드가 없습니다.');
             return reply(
                 `⚔️ [레이드 현황] ${session.boss.name} — 턴 ${session.turn}\n` +
-                `👹 보스 HP: ${session.bossHp}/${session.boss.maxHp}${session.enraged ? ' 💢광폭화' : ''}\n` +
-                `❤️ 내 HP: ${session.hp}/${session.maxHp}\n` +
+                `👹 보스${session.enraged ? ' 💢광폭화' : ''}\n` +
+                `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n` +
+                `❤️ 내 HP\n` +
+                `${hpBar(session.hp, session.maxHp)}\n` +
                 `!공격 / !방어 / !후퇴`
             );
         }
