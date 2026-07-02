@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3001;
+const PORT = 3000;
 const DATA_FILE = path.join(__dirname, 'users.json');
 const MARKET_FILE = path.join(__dirname, 'market.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -1222,7 +1222,8 @@ server.on('message', (msg, rinfo) => {
                 ' !내정보 — 현금·자산 요약\n' +
                 ' !내아이템 — 보유 아이템\n' +
                 ' !내코인 — 코인 현황\n' +
-                ' !랭킹 — 자산 순위\n\n' +
+                ' !랭킹 — 랭킹 종류 안내\n' +
+                ' !자산랭킹 / !스탯랭킹 / !합랭킹\n\n' +
                 '🎰 [게임]\n' +
                 ' !섯다 [금액] — 섯다 시작\n' +
                 ' !블랙잭 [금액] — 블랙잭\n' +
@@ -1478,20 +1479,94 @@ server.on('message', (msg, rinfo) => {
         // ══════════════════════════════════════════════
         // 랭킹
         // ══════════════════════════════════════════════
+        // ══════════════════════════════════════════════
+        // 랭킹 (자산/스탯/합)
+        // ══════════════════════════════════════════════
         if (cmd === '!랭킹') {
-            const all = Object.keys(db).filter(n=>userExists(db,n));
-            const ranked = all.map(n=>{const u=ensureUser(db,n);return{name:n,nw:calcNetWorth(u)};})
-                .filter(r=>r.nw.total>0)
-                .sort((a,b)=>b.nw.total-a.nw.total)
-                .slice(0,10);
-            if (ranked.length===0) return reply('❌ 자산이 있는 유저가 없습니다.');
-            const medals=['🥇','🥈','🥉'];
-            let board='🏆 [총자산 랭킹 TOP 10]\n─────────────────────\n';
-            ranked.forEach((r,i)=>{
-                const u=ensureUser(db,r.name);
-                const title=displayName(u,r.name);
-                board+=`${medals[i]||`${i+1}.`} ${title}: ${formatKRW(r.nw.total)}\n`;
+            return reply(
+                '🏆 [랭킹 선택]\n─────────────────────\n' +
+                '!자산랭킹 — 총 자산 순위 (골드+코인)\n' +
+                '!스탯랭킹 — 캐릭터 전투력 순위 (공격+방어+HP)\n' +
+                '!합랭킹 — 자산+전투력 종합 순위\n' +
+                '─────────────────────\n' +
+                '💡 각각 상위 10명까지 표시됩니다.'
+            );
+        }
+
+        if (cmd === '!자산랭킹') {
+            const all = Object.keys(db).filter(n => userExists(db, n));
+            const ranked = all
+                .map(n => { const u = ensureUser(db, n); return { name: n, total: calcNetWorth(u).total }; })
+                .filter(r => r.total > 0)
+                .sort((a, b) => b.total - a.total)
+                .slice(0, 10);
+            if (ranked.length === 0) return reply('❌ 자산이 있는 유저가 없습니다.');
+            const medals = ['🥇', '🥈', '🥉'];
+            let board = '💰 [자산 랭킹 TOP 10]\n─────────────────────\n';
+            ranked.forEach((r, i) => {
+                const u = ensureUser(db, r.name);
+                const title = displayName(u, r.name);
+                board += `${medals[i] || `${i + 1}.`} ${title}\n   ${formatKRW(r.total)}\n`;
             });
+            return reply(board);
+        }
+
+        if (cmd === '!스탯랭킹') {
+            const all = Object.keys(db).filter(n => userExists(db, n));
+            const ranked = all
+                .map(n => {
+                    const u = ensureUser(db, n);
+                    promoteParty(u);
+                    const stat = calcCharacterStat(u);
+                    // 전투력 공식: 공격력×2 + 방어력×3 + HP×0.5
+                    const power = Math.floor(stat.atk * 2 + stat.def * 3 + stat.maxHp * 0.5);
+                    return { name: n, atk: stat.atk, def: stat.def, hp: stat.maxHp, power };
+                })
+                .filter(r => r.power > 0)
+                .sort((a, b) => b.power - a.power)
+                .slice(0, 10);
+            if (ranked.length === 0) return reply('❌ 전투력 있는 유저가 없습니다.');
+            const medals = ['🥇', '🥈', '🥉'];
+            let board = '⚔️ [스탯 랭킹 TOP 10]\n─────────────────────\n';
+            ranked.forEach((r, i) => {
+                const u = ensureUser(db, r.name);
+                const title = displayName(u, r.name);
+                board += `${medals[i] || `${i + 1}.`} ${title}\n   전투력 ${r.power.toLocaleString()} (⚔️${r.atk.toLocaleString()} 🛡️${r.def.toLocaleString()} ❤️${r.hp.toLocaleString()})\n`;
+            });
+            return reply(board);
+        }
+
+        if (cmd === '!합랭킹' || cmd === '!종합랭킹') {
+            const all = Object.keys(db).filter(n => userExists(db, n));
+            // 자산과 전투력을 정규화해서 합산 (0~1000 스케일)
+            const dataArr = all.map(n => {
+                const u = ensureUser(db, n);
+                promoteParty(u);
+                const stat = calcCharacterStat(u);
+                const power = Math.floor(stat.atk * 2 + stat.def * 3 + stat.maxHp * 0.5);
+                const asset = calcNetWorth(u).total;
+                return { name: n, power, asset };
+            });
+            const maxAsset = Math.max(1, ...dataArr.map(d => d.asset));
+            const maxPower = Math.max(1, ...dataArr.map(d => d.power));
+            const ranked = dataArr
+                .map(d => {
+                    const assetScore = (d.asset / maxAsset) * 500;
+                    const powerScore = (d.power / maxPower) * 500;
+                    return { ...d, combined: Math.floor(assetScore + powerScore) };
+                })
+                .filter(r => r.combined > 0)
+                .sort((a, b) => b.combined - a.combined)
+                .slice(0, 10);
+            if (ranked.length === 0) return reply('❌ 랭킹에 오를 유저가 없습니다.');
+            const medals = ['🥇', '🥈', '🥉'];
+            let board = '🌟 [종합 랭킹 TOP 10]\n─────────────────────\n';
+            ranked.forEach((r, i) => {
+                const u = ensureUser(db, r.name);
+                const title = displayName(u, r.name);
+                board += `${medals[i] || `${i + 1}.`} ${title}\n   종합 ${r.combined}점 | 자산 ${formatKRW(r.asset)} | 전투력 ${r.power.toLocaleString()}\n`;
+            });
+            board += '─────────────────────\n💡 자산과 전투력을 각 500점 만점으로 환산한 종합점수입니다.';
             return reply(board);
         }
 
