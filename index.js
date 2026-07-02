@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+const PORT = 3001;
 const DATA_FILE = path.join(__dirname, 'users.json');
 const MARKET_FILE = path.join(__dirname, 'market.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -28,6 +28,7 @@ const DEFAULT_CONFIG = {
     },
     coin: { updateIntervalMinutes: 10, maxChangePercent: 40 },
     loan: { maxRatio: 0.5, hourlyInterestRate: 5 },
+    deposit: { graceMinutes: 20, hourlyInterestRate: 0.05 },
     employee: { taxRate: 20 },
     // Phase 2: 장비상자 (등급 고정 드랍, 부위만 랜덤)
     equipmentBox: {
@@ -38,19 +39,21 @@ const DEFAULT_CONFIG = {
         전설장비상자: { price: 100000000 },
         신화장비상자: { price: 800000000 }
     },
-    // Phase 2: 직원상자 (등급 고정, 해당 등급 파티원 지급)
-    employeeBox: {
-        초급직원상자: { price: 80000 },
-        중급직원상자: { price: 500000 },
-        고급직원상자: { price: 3000000 },
-        영웅직원상자: { price: 20000000 },
-        전설직원상자: { price: 150000000 },
-        신화직원상자: { price: 1000000000 }
+    // Phase 2: 용병상자 (등급 고정, 해당 등급 파티원 지급)
+    mercenaryBox: {
+        초급용병상자: { price: 80000 },
+        중급용병상자: { price: 500000 },
+        고급용병상자: { price: 3000000 },
+        영웅용병상자: { price: 20000000 },
+        전설용병상자: { price: 150000000 },
+        신화용병상자: { price: 1000000000 }
     },
     // 장비상자 개봉 시 부위별 드랍 확률(가중치)
     equipDropRate: { weapon: 20, armor: 20, shield: 20, ring: 40 },
     // 장비상점 (초급 등급만 판매)
     equipShop: { weapon: 3000, armor: 3000, shield: 5000, ring: 8000 },
+    // Phase 3: 사냥터
+    hunt: { cooldownSeconds: 60, breakChance: 15 },
     newsAdmins: ['A', '박성빈'],
     quiz: {
         rewardPool: [
@@ -165,6 +168,18 @@ const PARTY_MEMBERS = {
     '검은 지배자':  { grade: '태초', baseSkillPower: 300, skill: 'ultimate',  skillDesc: '35% 확률 발동 - 강력한 진명해방 (관통+2회공격+회복)' }
 };
 
+// 용병 스킬 타입별 역할 라벨 (파티 편성 시 UI 안내용)
+const ROLE_LABEL = {
+    atkBuff:   '⚔️ 버퍼(공격)',
+    defBuff:   '🛡️ 탱커(방어)',
+    heal:      '💚 힐러',
+    critUp:    '🎯 딜러(크리티컬)',
+    pierce:    '🗡️ 딜러(관통)',
+    doubleAtk: '⚡ 딜러(연타)',
+    ultimate:  '🌌 올라운더'
+};
+
+
 // 공백 있는 파티원 이름을 args 배열에서 매칭
 // 예: args = ['A', '검은', '지배자', '3'] → { name: '검은 지배자', restArgs: ['3'] }
 function matchPartyMemberFromArgs(args, startIdx) {
@@ -216,6 +231,32 @@ const SLOT_ALIASES = {
     반지: 'ring' // 인벤/구매 시 부위타입으로만 쓰임(어느 반지칸이든 가능)
 };
 
+// 특수 옵션(효과) 풀 — 같은 부위/등급이라도 서로 다른 조합이 나오도록 함.
+// value는 등급 인덱스(0~6)에 비례해 스케일링됨. 실제 전투(사냥/레이드) 계산에서 참조.
+const EFFECT_POOL = [
+    { id: 'crit',      label: '치명타 확률',   appliesTo: ['weapon', 'ring'],          unit: '%', baseVal: 2,  perGrade: 1.2, desc: v => `치명타 확률 +${v}%` },
+    { id: 'critdmg',   label: '치명타 피해',   appliesTo: ['weapon', 'ring'],          unit: '%', baseVal: 8,  perGrade: 5,   desc: v => `치명타 피해 +${v}%` },
+    { id: 'pierce',    label: '방어관통',      appliesTo: ['weapon'],                  unit: '%', baseVal: 3,  perGrade: 2.5, desc: v => `방어관통 +${v}%` },
+    { id: 'bossdmg',   label: '보스전 데미지', appliesTo: ['weapon', 'ring'],          unit: '%', baseVal: 3,  perGrade: 2,   desc: v => `보스 상대 데미지 +${v}%` },
+    { id: 'lifesteal', label: '흡혈',          appliesTo: ['weapon', 'ring'],          unit: '%', baseVal: 2,  perGrade: 1.5, desc: v => `공격 시 데미지의 ${v}% 흡혈` },
+    { id: 'thorns',    label: '반격',          appliesTo: ['armor', 'shield'],         unit: '%', baseVal: 3,  perGrade: 2,   desc: v => `피격 시 ${v}% 데미지 반사` },
+    { id: 'dodge',     label: '회피율',        appliesTo: ['armor', 'shield', 'ring'], unit: '%', baseVal: 1,  perGrade: 0.8, desc: v => `회피율 +${v}%` },
+    { id: 'regen',     label: '재생',          appliesTo: ['armor', 'ring'],           unit: '%', baseVal: 1,  perGrade: 0.7, desc: v => `매 턴 최대체력의 ${v}% 회복` },
+    { id: 'guard',     label: '철벽',          appliesTo: ['shield'],                  unit: '%', baseVal: 3,  perGrade: 2,   desc: v => `받는 피해 ${v}% 감소` },
+    { id: 'proc',      label: '용병 발동률',   appliesTo: ['ring'],                    unit: '%', baseVal: 2,  perGrade: 1.5, desc: v => `용병 스킬 발동확률 +${v}%` }
+];
+const EFFECT_ATTACH_CHANCE = 0.4; // 아이템 생성 시 특수옵션이 붙을 확률
+
+function rollEquipmentEffect(slotType, grade) {
+    if (Math.random() >= EFFECT_ATTACH_CHANCE) return null;
+    const gradeIdx = Math.max(0, EQUIP_GRADES.indexOf(grade));
+    const pool = EFFECT_POOL.filter(e => e.appliesTo.includes(slotType));
+    if (pool.length === 0) return null;
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    const value = Math.round((picked.baseVal + picked.perGrade * gradeIdx) * 10) / 10;
+    return { id: picked.id, label: picked.label, value, unit: picked.unit, desc: picked.desc(value) };
+}
+
 let EQUIP_ID_SEQ = 0;
 function nextEquipId() {
     EQUIP_ID_SEQ += 1;
@@ -250,18 +291,34 @@ function createEquipmentItem(slotType, grade) {
         const labelMap = { atk: '공격', def: '방어', hp: '체력' };
         name = `${grade} 반지(${picks.map(p => labelMap[p]).join('/')})`;
     }
-    return { id: nextEquipId(), slotType, grade, name, atk, def, hp, enhanceLevel: 0 };
+    const effect = rollEquipmentEffect(slotType, grade);
+    if (effect) name += ` [${effect.label}]`;
+    return { id: nextEquipId(), slotType, grade, name, atk, def, hp, enhanceLevel: 0, broken: false, effect };
 }
 
-// 강화 적용 스탯 (레벨당 +15%)
+// 강화 적용 스탯 (레벨당 +15%). 파손된 장비는 수리 전까지 스탯이 0으로 취급됨.
 function effectiveItemStat(item) {
     if (!item) return { atk: 0, def: 0, hp: 0 };
+    if (item.broken) return { atk: 0, def: 0, hp: 0 };
     const mult = 1 + (item.enhanceLevel || 0) * 0.15;
     return {
         atk: Math.round((item.atk || 0) * mult),
         def: Math.round((item.def || 0) * mult),
         hp:  Math.round((item.hp  || 0) * mult)
     };
+}
+
+// 장비 한 줄 표시용 (통계 + 특수옵션 + 파손여부)
+function formatEquipLine(it) {
+    if (it.broken) return `💔[파손됨 — !장비수리 필요]`;
+    const eff = effectiveItemStat(it);
+    const parts = [
+        eff.atk ? `공격+${eff.atk}` : null,
+        eff.def ? `방어+${eff.def}` : null,
+        eff.hp  ? `체력+${eff.hp}`  : null
+    ].filter(Boolean);
+    if (it.effect) parts.push(it.effect.desc);
+    return parts.join(' ') || '(스탯 없음)';
 }
 
 // 강화 성공확률 (목표 레벨 1~10 기준, index 0 = +1강화)
@@ -280,7 +337,7 @@ function calcEnhanceCost(grade, targetLevel) {
     };
 }
 
-// 장비상자/직원상자 개봉
+// 장비상자/용병상자 개봉
 function rollEquipmentBox(boxType) {
     const grade = boxType.replace('장비상자', '');
     if (!EQUIP_GRADES.includes(grade)) return null;
@@ -295,10 +352,20 @@ function rollEquipmentBox(boxType) {
     return createEquipmentItem(slotType, grade);
 }
 
-function rollEmployeeBox(boxType) {
-    const grade = boxType.replace('직원상자', '');
-    const name = Object.keys(PARTY_MEMBERS).find(n => PARTY_MEMBERS[n].grade === grade);
-    return name || null;
+const MERCENARY_BONUS_RATE = 0.01; // % — 상자 등급 용병은 항상 확정, 그 위 등급 용병이 추가로 나올 확률
+function rollMercenaryBox(boxType) {
+    const grade = boxType.replace('용병상자', '');
+    const gradeIdx = EQUIP_GRADES.indexOf(grade);
+    const nameOf = (g) => Object.keys(PARTY_MEMBERS).find(n => PARTY_MEMBERS[n].grade === g);
+    const base = nameOf(grade);
+    if (!base) return null;
+    let bonus = null;
+    if (gradeIdx >= 0 && gradeIdx < EQUIP_GRADES.length - 1) {
+        if (Math.random() * 100 < MERCENARY_BONUS_RATE) {
+            bonus = nameOf(EQUIP_GRADES[gradeIdx + 1]);
+        }
+    }
+    return { base, bonus };
 }
 
 // 판매가 (등급/부위 기준 골드 환산)
@@ -307,6 +374,40 @@ function calcSellPrice(item) {
     const base = SELL_PRICE_BASE[item.grade] || 1000;
     const enhanceBonus = 1 + (item.enhanceLevel || 0) * 0.2;
     return Math.floor(base * enhanceBonus);
+}
+
+// 장비 수리비 (등급 기준)
+const REPAIR_GOLD_BASE = { 초급: 3000, 중급: 12000, 고급: 50000, 영웅: 200000, 전설: 800000, 신화: 3000000, 태초: 12000000 };
+function calcRepairCost(grade) {
+    return REPAIR_GOLD_BASE[grade] || 3000;
+}
+
+// 전투력 계산 (스탯랭킹과 동일 공식: 공격x2 + 방어x3 + HPx0.5)
+function calcCombatPower(stat) {
+    return Math.floor((stat.atk || 0) * 2 + (stat.def || 0) * 3 + (stat.maxHp || stat.hp || 0) * 0.5);
+}
+
+// ─────────────────────────────────────────────
+// Phase 3: 사냥터
+// ─────────────────────────────────────────────
+const HUNTING_GROUNDS = [
+    { name: '뒷산',        grade: '초급', recommendedPower: 100,    goldMin: 500,     goldMax: 2000,     stoneMin: 1,   stoneMax: 3 },
+    { name: '어두운 숲',   grade: '중급', recommendedPower: 400,    goldMin: 2000,    goldMax: 8000,     stoneMin: 2,   stoneMax: 6 },
+    { name: '폐광',        grade: '고급', recommendedPower: 1500,   goldMin: 8000,    goldMax: 30000,    stoneMin: 5,   stoneMax: 15 },
+    { name: '얼음 동굴',   grade: '영웅', recommendedPower: 6000,   goldMin: 30000,   goldMax: 120000,   stoneMin: 12,  stoneMax: 35 },
+    { name: '용의 둥지',   grade: '전설', recommendedPower: 25000,  goldMin: 120000,  goldMax: 500000,   stoneMin: 30,  stoneMax: 90 },
+    { name: '천공의 섬',   grade: '신화', recommendedPower: 100000, goldMin: 500000,  goldMax: 2000000,  stoneMin: 80,  stoneMax: 250 },
+    { name: '혼돈의 균열', grade: '태초', recommendedPower: 500000, goldMin: 2000000, goldMax: 8000000,  stoneMin: 200, stoneMax: 600 }
+];
+
+function getHuntingGround(name) {
+    return HUNTING_GROUNDS.find(h => h.name === name) || null;
+}
+
+function calcHuntSuccessRate(userPower, recommendedPower) {
+    const ratio = userPower / recommendedPower;
+    const rate = 50 + (ratio - 1) * 50;
+    return Math.min(95, Math.max(5, Math.round(rate)));
 }
 
 // 가챠 아이템 풀 (등급별)
@@ -586,6 +687,7 @@ function createDefaultUser() {
         gachaItems: [],
         boxes: {},
         loan: { amount: 0, takenAt: 0 },
+        deposit: { amount: 0, depositedAt: 0 },
         seized: false,
         // === RPG ===
         partyMembers: {},    // { '김판돌': { count: N, level: N } } — 10명 모으면 +1강화
@@ -635,6 +737,11 @@ function ensureUser(db, name) {
     if (!Array.isArray(u.gachaItems)) u.gachaItems = [];
     if (!u.boxes || typeof u.boxes !== 'object') u.boxes = {};
     if (!u.loan || typeof u.loan !== 'object') u.loan = { amount: 0, takenAt: 0 };
+    if (!u.deposit || typeof u.deposit !== 'object') u.deposit = { amount: 0, depositedAt: 0 };
+    else {
+        if (typeof u.deposit.amount !== 'number' || isNaN(u.deposit.amount)) u.deposit.amount = 0;
+        if (typeof u.deposit.depositedAt !== 'number' || isNaN(u.deposit.depositedAt)) u.deposit.depositedAt = 0;
+    }
     if (typeof u.seized !== 'boolean') u.seized = false;
     if (!u.stats || typeof u.stats !== 'object') u.stats = createDefaultUser().stats;
     // === RPG 필드 정규화 ===
@@ -652,6 +759,8 @@ function ensureUser(db, name) {
                 if (typeof it.atk !== 'number') it.atk = 0;
                 if (typeof it.def !== 'number') it.def = 0;
                 if (typeof it.hp !== 'number') it.hp = 0;
+                if (typeof it.broken !== 'boolean') it.broken = false;
+                if (it.effect === undefined) it.effect = null;
                 if (!it.id) it.id = nextEquipId();
             }
         }
@@ -664,6 +773,8 @@ function ensureUser(db, name) {
             if (typeof it.atk !== 'number') it.atk = 0;
             if (typeof it.def !== 'number') it.def = 0;
             if (typeof it.hp !== 'number') it.hp = 0;
+            if (typeof it.broken !== 'boolean') it.broken = false;
+            if (it.effect === undefined) it.effect = null;
             if (!it.id) it.id = nextEquipId();
         }
     }
@@ -718,6 +829,17 @@ function calcLoanDebt(loan) {
     const hoursElapsed = (Date.now() - loan.takenAt) / 3600000;
     const rate = CONFIG.loan.hourlyInterestRate / 100;
     return Math.floor(loan.amount * Math.pow(1 + rate, hoursElapsed));
+}
+
+// 예금 이자 계산 (예치 후 graceMinutes 지나야 이자 발생, 단리 · 아주 적은 이율)
+function calcDepositInterest(deposit) {
+    if (!deposit || deposit.amount <= 0 || deposit.depositedAt <= 0) return 0;
+    const elapsedMin = (Date.now() - deposit.depositedAt) / 60000;
+    const grace = CONFIG.deposit.graceMinutes;
+    if (elapsedMin < grace) return 0;
+    const interestHours = (elapsedMin - grace) / 60;
+    const rate = CONFIG.deposit.hourlyInterestRate / 100;
+    return Math.floor(deposit.amount * rate * interestHours);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -863,13 +985,15 @@ function calcNetWorth(user) {
         if (count > 0 && COIN_MARKET[name]) coinValue += COIN_MARKET[name].currentPrice * count;
     }
     const debt = calcLoanDebt(user.loan);
+    const depositTotal = (user.deposit && user.deposit.amount > 0) ? (user.deposit.amount + calcDepositInterest(user.deposit)) : 0;
     return {
         cash: user.points,
         luxuryValue: 0, // 레거시 필드 유지 (참조 안전)
         coinValue,
+        depositValue: depositTotal,
         empEarning: 0,
         debt,
-        total: user.points + coinValue - debt
+        total: user.points + coinValue + depositTotal - debt
     };
 }
 
@@ -1125,6 +1249,12 @@ function seizeAssets(db, name) {
             user.points += COIN_MARKET[n].currentPrice * h.count;
             h.count=0; h.avgPrice=0;
         }
+    }
+
+    // 예금 강제 해지
+    if (user.deposit && user.deposit.amount > 0) {
+        user.points += user.deposit.amount + calcDepositInterest(user.deposit);
+        user.deposit = { amount: 0, depositedAt: 0 };
     }
 
     // 직원 해고: RPG 개편으로 시스템 제거됨 (파티원은 압류 시 유지)
@@ -1428,11 +1558,17 @@ server.on('message', (msg, rinfo) => {
                 ' !장비판매 [번호]\n' +
                 ' !장비상점 / !장비구매 [부위] — 초급 장비 구매\n' +
                 ' !장비상자목록 / !장비상자구매 / !장비상자열기\n' +
-                ' !직원상자목록 / !직원상자구매 / !직원상자열기\n\n' +
+                ' !용병상자목록 / !용병상자구매 / !용병상자열기\n\n' +
                 '🏦 [은행]\n' +
                 ' !대출 [금액] — 대출 (자산 50% 한도)\n' +
                 ' !상환 [금액or전액] — 대출 상환\n' +
-                ' !대출조회 — 현재 대출 현황\n\n' +
+                ' !대출조회 — 현재 대출 현황\n' +
+                ' !예금 [금액] — 예치 (20분 후부터 이자)\n' +
+                ' !출금 [금액or전액] / !예금조회\n\n' +
+                '🏕️ [사냥터]\n' +
+                ' !사냥터 — 사냥터 목록\n' +
+                ' !사냥 [사냥터명] — 사냥 시도 (실패 시 장비 파손 위험)\n' +
+                ' !장비수리 [슬롯] / !장비수리전체\n\n' +
                 '💡 [금액 입력]\n' +
                 ' 숫자, 1만, 1.5억, 1조 모두 가능\n' +
                 ' 배팅: 올인/하프/삥/따당'
@@ -1499,6 +1635,8 @@ server.on('message', (msg, rinfo) => {
 `;
             msg += `🪙 코인가치: ${formatKRW(nw.coinValue)}
 `;
+            if (nw.depositValue > 0) msg += `🏦 예금: ${formatKRW(nw.depositValue)}
+`;
             if (debt > 0) msg += `🏦 대출채무: -${formatKRW(debt)}
 `;
             msg += `💎 총자산: ${formatKRW(nw.total)}
@@ -1516,6 +1654,10 @@ server.on('message', (msg, rinfo) => {
                 if (user.huntWins > 0) msg += `🏹 사냥 성공: ${user.huntWins}회
 `;
             }
+            // 파손 장비 경고
+            const brokenCount = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && user.equipment[s].broken).length;
+            if (brokenCount > 0) msg += `⚠️ 파손된 장비 ${brokenCount}개 (!장비수리전체)
+`;
             return reply(msg);
         }
 
@@ -1549,7 +1691,7 @@ server.on('message', (msg, rinfo) => {
         }
 
         if (cmd === '!내직원') {
-            return reply('⚠️ 직원 시스템은 RPG 개편으로 제거되었습니다.\n대신 !파티원, !파티 를 사용해주세요.');
+            return reply('⚠️ 직원 시스템은 RPG 개편으로 제거되었습니다.\n대신 !파티원, !파티 를 사용해주세요. (용병 뽑기: !용병상자구매)');
         }
 
         // ══════════════════════════════════════════════
@@ -1560,7 +1702,7 @@ server.on('message', (msg, rinfo) => {
             saveData(db);
             const owned = Object.entries(user.partyMembers || {}).filter(([,p]) => (p.count||0) > 0 || (p.level||0) > 0);
             if (owned.length === 0) {
-                return reply('❌ 보유 파티원이 없습니다.\n!직원상자구매 로 구매 후 !직원상자열기 로 뽑아보세요.');
+                return reply('❌ 보유 파티원이 없습니다.\n!용병상자구매 로 구매 후 !용병상자열기 로 뽑아보세요.');
             }
             let msg = `👥 [${sender}님의 파티원]\n─────────────────────\n`;
             owned.sort((a,b) => (b[1].level - a[1].level) || (b[1].count - a[1].count));
@@ -1569,7 +1711,7 @@ server.on('message', (msg, rinfo) => {
                 if (!info) continue;
                 const power = calcPartyMemberPower(name, p.level);
                 const active = user.activeParty.includes(name) ? ' 🟢편성중' : '';
-                msg += `[${info.grade}] ${name} +${p.level}${active}\n`;
+                msg += `[${info.grade}] ${name} +${p.level}${active} — ${ROLE_LABEL[info.skill]||''}\n`;
                 msg += `   보유: ${p.count}개 (10개 시 +1강화)\n`;
                 msg += `   스킬 파워: ${power.skillPower} / ${info.skillDesc}\n`;
             }
@@ -1632,13 +1774,7 @@ server.on('message', (msg, rinfo) => {
                 const it = eq[slot];
                 if (!it) { msg += `${SLOT_LABEL[slot]}: (없음)\n`; continue; }
                 hasEq = true;
-                const eff = effectiveItemStat(it);
-                const statStr = [
-                    eff.atk ? `공격+${eff.atk}` : null,
-                    eff.def ? `방어+${eff.def}` : null,
-                    eff.hp  ? `체력+${eff.hp}`  : null
-                ].filter(Boolean).join(' ');
-                msg += `${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0}\n   ㄴ ${statStr}\n`;
+                msg += `${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0}\n   ㄴ ${formatEquipLine(it)}\n`;
             }
             if (!hasEq) msg += '\n장착한 장비가 없습니다. !장비상점 에서 구매해보세요.\n';
             msg += `─────────────────────\n!장비인벤 — 보유 장비 목록\n!장비장착 [슬롯] [인벤번호]`;
@@ -1650,14 +1786,8 @@ server.on('message', (msg, rinfo) => {
             if (inv.length === 0) return reply('❌ 보유한 미장착 장비가 없습니다.\n!장비상자열기 또는 !장비상점 을 이용해보세요.');
             let msg = `🎒 [${sender}님의 장비 인벤토리]\n─────────────────────\n`;
             inv.forEach((it, i) => {
-                const eff = effectiveItemStat(it);
-                const statStr = [
-                    eff.atk ? `공격+${eff.atk}` : null,
-                    eff.def ? `방어+${eff.def}` : null,
-                    eff.hp  ? `체력+${eff.hp}`  : null
-                ].filter(Boolean).join(' ');
                 const slotLabel = it.slotType === 'ring' ? '💍 반지' : SLOT_LABEL[it.slotType] || it.slotType;
-                msg += `[${i+1}] ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0} (${slotLabel})\n   ㄴ ${statStr}\n`;
+                msg += `[${i+1}] ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0} (${slotLabel})\n   ㄴ ${formatEquipLine(it)}\n`;
             });
             msg += `─────────────────────\n!장비장착 [슬롯] [번호] / !장비판매 [번호]`;
             return reply(msg);
@@ -1837,60 +1967,174 @@ server.on('message', (msg, rinfo) => {
             return reply(m);
         }
 
-        if (cmd === '!직원상자목록') {
-            let m = '📦 [직원상자 목록]\n─────────────────────\n';
-            for (const [type, cfg] of Object.entries(CONFIG.employeeBox)) {
-                const grade = type.replace('직원상자', '');
+        if (cmd === '!용병상자목록') {
+            let m = '📦 [용병상자 목록]\n─────────────────────\n';
+            for (const [type, cfg] of Object.entries(CONFIG.mercenaryBox)) {
+                const grade = type.replace('용병상자', '');
                 const name = Object.keys(PARTY_MEMBERS).find(n => PARTY_MEMBERS[n].grade === grade);
                 m += `${type} — ${formatKRW(cfg.price)} (${name})\n`;
             }
-            m += '\n!직원상자구매 [종류] [수량]\n!직원상자열기 [종류] [수량]';
+            m += `\n✨ ${MERCENARY_BONUS_RATE}% 확률로 한 단계 위 등급 용병도 추가로 획득!\n!용병상자구매 [종류] [수량]\n!용병상자열기 [종류] [수량]`;
             return reply(m);
         }
 
-        if (cmd === '!직원상자구매') {
-            if (args.length < 1) return reply('❌ !직원상자구매 [종류] [수량(기본1)]\n(!직원상자목록 참고)');
+        if (cmd === '!용병상자구매') {
+            if (args.length < 1) return reply('❌ !용병상자구매 [종류] [수량(기본1)]\n(!용병상자목록 참고)');
             const boxType = args[0];
             const qty = parseInt(args[1] || '1', 10);
-            if (!CONFIG.employeeBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
+            if (!CONFIG.mercenaryBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
             if (isNaN(qty) || qty < 1 || qty > 100) return reply('❌ 수량은 1~100');
-            const cost = CONFIG.employeeBox[boxType].price * qty;
+            const cost = CONFIG.mercenaryBox[boxType].price * qty;
             if (user.points < cost) return reply(`❌ 자금 부족 (필요: ${formatKRW(cost)})`);
             user.points -= cost;
             user.boxes[boxType] = (user.boxes[boxType] || 0) + qty;
             saveData(db);
-            return reply(`📦 [구매] ${boxType} x${qty}\n지출: -${formatKRW(cost)}\n보유: ${user.boxes[boxType]}개\n잔액: ${formatKRW(user.points)}\n\n!직원상자열기 ${boxType} ${qty} 로 개봉`);
+            return reply(`📦 [구매] ${boxType} x${qty}\n지출: -${formatKRW(cost)}\n보유: ${user.boxes[boxType]}개\n잔액: ${formatKRW(user.points)}\n\n!용병상자열기 ${boxType} ${qty} 로 개봉`);
         }
 
-        if (cmd === '!직원상자열기') {
-            if (args.length < 1) return reply('❌ !직원상자열기 [종류] [수량(기본1)]');
+        if (cmd === '!용병상자열기') {
+            if (args.length < 1) return reply('❌ !용병상자열기 [종류] [수량(기본1)]');
             const boxType = args[0];
             const qty = parseInt(args[1] || '1', 10);
-            if (!CONFIG.employeeBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
+            if (!CONFIG.mercenaryBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
             if (isNaN(qty) || qty < 1 || qty > 100) return reply('❌ 수량은 1~100');
             if ((user.boxes[boxType] || 0) < qty) return reply(`❌ ${boxType} 부족 (보유: ${user.boxes[boxType] || 0}개)`);
 
-            const memberName = rollEmployeeBox(boxType);
-            if (!memberName) return reply('❌ 상자 오류: 해당 등급 파티원을 찾을 수 없습니다.');
-
             user.boxes[boxType] -= qty;
-            if (!user.partyMembers[memberName]) user.partyMembers[memberName] = { count: 0, level: 0 };
-            user.partyMembers[memberName].count += qty;
+            const gained = {}; // name -> count
+            let bonusHits = 0;
+            for (let i = 0; i < qty; i++) {
+                const r = rollMercenaryBox(boxType);
+                if (!r) continue;
+                gained[r.base] = (gained[r.base] || 0) + 1;
+                if (r.bonus) {
+                    gained[r.bonus] = (gained[r.bonus] || 0) + 1;
+                    bonusHits++;
+                }
+            }
+            for (const [name, cnt] of Object.entries(gained)) {
+                if (!user.partyMembers[name]) user.partyMembers[name] = { count: 0, level: 0 };
+                user.partyMembers[name].count += cnt;
+            }
             promoteParty(user);
             saveData(db);
 
-            const p = user.partyMembers[memberName];
-            return reply(`📦 [${boxType} 개봉] x${qty}\n─────────────────────\n${PARTY_MEMBERS[memberName].grade} ${memberName} x${qty} 획득!\n현재: +${p.level} / ${p.count}개 보유`);
+            let m = `📦 [${boxType} 개봉] x${qty}\n─────────────────────\n`;
+            for (const [name, cnt] of Object.entries(gained)) {
+                const info = PARTY_MEMBERS[name];
+                const p = user.partyMembers[name];
+                m += `${EQUIP_GRADE_EMOJI[info.grade]||''}[${info.grade}] ${name} x${cnt} (현재 +${p.level} / ${p.count}개)\n`;
+            }
+            if (bonusHits > 0) m += `\n🎊✨ 초희귀! 상위 등급 용병이 ${bonusHits}회 추가로 나왔습니다! ✨🎊`;
+            return reply(m);
+        }
+
+        // ══════════════════════════════════════════════
+        // RPG - 사냥터 (Phase 3)
+        // ══════════════════════════════════════════════
+        if (cmd === '!사냥터') {
+            let msg = `🏕️ [사냥터 목록]\n─────────────────────\n`;
+            for (const h of HUNTING_GROUNDS) {
+                msg += `${EQUIP_GRADE_EMOJI[h.grade]||''}[${h.grade}] ${h.name} — 권장전투력 ${h.recommendedPower.toLocaleString()}\n`;
+                msg += `   ㄴ 보상: 골드 ${formatKRW(h.goldMin)}~${formatKRW(h.goldMax)} / 강화석 ${h.stoneMin}~${h.stoneMax}개\n`;
+            }
+            msg += `─────────────────────\n!사냥 [사냥터명] — 사냥 시도\n💡 실패 시 장착한 장비 중 하나가 파손될 수 있습니다.`;
+            return reply(msg);
+        }
+
+        if (cmd === '!사냥') {
+            if (args.length < 1) return reply('❌ !사냥 [사냥터명]\n(!사냥터 로 목록 확인)');
+            const forcedGo = args.includes('강행');
+            const groundName = args.filter(a => a !== '강행').join(' ');
+            const ground = getHuntingGround(groundName);
+            if (!ground) return reply(`❌ 존재하지 않는 사냥터: ${groundName}\n(!사냥터 로 목록 확인)`);
+
+            const cooldownMs = (CONFIG.hunt.cooldownSeconds || 60) * 1000;
+            const remain = cooldownMs - (Date.now() - (user.lastHuntAt || 0));
+            if (remain > 0) return reply(`⏳ 사냥 쿨타임 중입니다. ${Math.ceil(remain/1000)}초 후 다시 시도하세요.`);
+
+            // 파손 장비 확인
+            const brokenSlots = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && user.equipment[s].broken);
+            if (brokenSlots.length > 0 && !forcedGo) {
+                const list = brokenSlots.map(s => `${SLOT_LABEL[s]}: ${user.equipment[s].name}`).join('\n ');
+                return reply(
+                    `⚠️ 파손된 장비가 있습니다. 수리가 필요합니다.\n ${list}\n\n` +
+                    `!장비수리 [슬롯] 으로 수리하거나,\n` +
+                    `그래도 진행하시려면 '!사냥 ${groundName} 강행' 을 입력하세요.\n(파손 장비는 스탯이 0으로 적용됩니다)`
+                );
+            }
+
+            promoteParty(user);
+            const stat = calcCharacterStat(user);
+            const power = calcCombatPower(stat);
+            const successRate = calcHuntSuccessRate(power, ground.recommendedPower);
+            const roll = Math.random() * 100;
+
+            user.lastHuntAt = Date.now();
+            user.huntCount = (user.huntCount || 0) + 1;
+
+            let msg = `🏕️ [사냥 시도] ${ground.name} (권장전투력 ${ground.recommendedPower.toLocaleString()})\n`;
+            msg += `내 전투력: ${power.toLocaleString()} / 성공확률: ${successRate}%\n─────────────────────\n`;
+
+            if (roll < successRate) {
+                const gold = Math.floor(ground.goldMin + Math.random() * (ground.goldMax - ground.goldMin));
+                const stones = Math.floor(ground.stoneMin + Math.random() * (ground.stoneMax - ground.stoneMin));
+                user.points += gold;
+                user.stones = (user.stones || 0) + stones;
+                user.huntWins = (user.huntWins || 0) + 1;
+                msg += `🎉 사냥 성공!\n획득: 골드 +${formatKRW(gold)} / 강화석 +${stones}개`;
+            } else {
+                msg += `💀 사냥 실패...`;
+                const equippedSlots = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && !user.equipment[s].broken);
+                const breakChance = CONFIG.hunt.breakChance || 15;
+                if (equippedSlots.length > 0 && Math.random() * 100 < breakChance) {
+                    const slot = equippedSlots[Math.floor(Math.random() * equippedSlots.length)];
+                    user.equipment[slot].broken = true;
+                    msg += `\n💥 ${SLOT_LABEL[slot]} [${user.equipment[slot].name}] 이(가) 파손되었습니다! (!장비수리 로 복구)`;
+                }
+            }
+            saveData(db);
+            msg += `\n─────────────────────\n잔액: ${formatKRW(user.points)} / 강화석: ${(user.stones||0).toLocaleString()}개\n(총 사냥 ${user.huntCount}회 / 성공 ${user.huntWins}회)`;
+            return reply(msg);
+        }
+
+        if (cmd === '!장비수리') {
+            if (args.length < 1) return reply('❌ !장비수리 [슬롯]\n(슬롯: 무기/방어구/방패/반지1/반지2)');
+            const slot = SLOT_ALIASES[args[0]];
+            if (!slot || slot === 'ring') return reply('❌ 슬롯은 무기/방어구/방패/반지1/반지2 중 하나여야 합니다.');
+            const item = user.equipment[slot];
+            if (!item) return reply(`❌ ${SLOT_LABEL[slot]}에 장착된 장비가 없습니다.`);
+            if (!item.broken) return reply(`✅ ${SLOT_LABEL[slot]}의 장비는 파손되지 않았습니다.`);
+            const cost = calcRepairCost(item.grade);
+            if (user.points < cost) return reply(`❌ 수리비 부족 (필요: ${formatKRW(cost)})`);
+            user.points -= cost;
+            item.broken = false;
+            saveData(db);
+            return reply(`🔧 [수리 완료] ${SLOT_LABEL[slot]}: ${item.name}\n지출: -${formatKRW(cost)}\n잔액: ${formatKRW(user.points)}`);
+        }
+
+        if (cmd === '!장비수리전체') {
+            const brokenSlots = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && user.equipment[s].broken);
+            if (brokenSlots.length === 0) return reply('✅ 파손된 장비가 없습니다.');
+            let totalCost = 0;
+            for (const s of brokenSlots) totalCost += calcRepairCost(user.equipment[s].grade);
+            if (user.points < totalCost) return reply(`❌ 수리비 부족 (필요: ${formatKRW(totalCost)}, 파손 ${brokenSlots.length}개)`);
+            user.points -= totalCost;
+            for (const s of brokenSlots) user.equipment[s].broken = false;
+            saveData(db);
+            return reply(`🔧 [전체 수리 완료] ${brokenSlots.length}개 장비 수리\n지출: -${formatKRW(totalCost)}\n잔액: ${formatKRW(user.points)}`);
         }
 
         if (cmd === '!내스탯' || cmd === '!스탯') {
             promoteParty(user);
             saveData(db);
             const stat = calcCharacterStat(user);
+            const power = calcCombatPower(stat);
             let msg = `⚔️ [${sender}님의 캐릭터 스탯]\n━━━━━━━━━━━━━━━━━━━━\n`;
             msg += `❤️ HP: ${stat.maxHp.toLocaleString()}\n`;
             msg += `🗡️ 공격력: ${stat.atk.toLocaleString()}\n`;
             msg += `🛡️ 방어력: ${stat.def.toLocaleString()}\n`;
+            msg += `🔥 전투력: ${power.toLocaleString()}\n`;
             msg += `━━━━━━━━━━━━━━━━━━━━\n`;
             msg += `💰 골드: ${formatKRW(user.points)}\n`;
             msg += `💎 강화석: ${(user.stones||0).toLocaleString()}개\n`;
@@ -1898,14 +2142,17 @@ server.on('message', (msg, rinfo) => {
             msg += `━━━━━━━━━━━━━━━━━━━━\n`;
             const eq = user.equipment || {};
             let hasEq = false;
+            let hasBroken = false;
             for (const slot of ['weapon','armor','shield','ring1','ring2']) {
                 if (eq[slot]) {
                     hasEq = true;
                     const it = eq[slot];
-                    msg += `${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0}\n`;
+                    if (it.broken) hasBroken = true;
+                    msg += `${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0}${it.broken?' 💔[파손]':''}\n`;
                 }
             }
             if (!hasEq) msg += '(장착한 장비 없음 — !장비상점 에서 구매해보세요)\n';
+            if (hasBroken) msg += '⚠️ 파손된 장비가 있습니다. !장비수리 로 복구하세요.\n';
             msg += `━━━━━━━━━━━━━━━━━━━━\n`;
             if (user.activeParty && user.activeParty.length > 0) {
                 msg += `⚔️ 파티: ${user.activeParty.map(n => `${n} +${user.partyMembers[n].level}`).join(' / ')}`;
@@ -2212,6 +2459,70 @@ server.on('message', (msg, rinfo) => {
                 `현재 채무: ${formatKRW(debt)}\n` +
                 `이자: ${formatKRW(debt - user.loan.amount)}\n` +
                 (user.seized ? '⛔ 압류 상태' : '')
+            );
+        }
+
+        // ══════════════════════════════════════════════
+        // 은행 (예금)
+        // ══════════════════════════════════════════════
+        if (cmd === '!예금') {
+            if (args.length < 1) return reply('❌ !예금 [금액]');
+            const amt = parseAmount(args[0]);
+            if (isNaN(amt) || amt <= 0) return reply('❌ 금액 오류');
+            if (user.points < amt) return reply(`❌ 자금 부족 (보유: ${formatKRW(user.points)})`);
+            // 기존 예금이 있으면 이자를 원금에 합산 후 새 금액 추가, 예치 시각 갱신
+            const accrued = calcDepositInterest(user.deposit);
+            user.deposit.amount = (user.deposit.amount || 0) + accrued + amt;
+            user.deposit.depositedAt = Date.now();
+            user.points -= amt;
+            saveData(db);
+            return reply(
+                `🏦 [예금 완료]\n예치액: +${formatKRW(amt)}` +
+                (accrued > 0 ? ` (기존 이자 ${formatKRW(accrued)} 합산)` : '') +
+                `\n총 예금: ${formatKRW(user.deposit.amount)}\n잔액: ${formatKRW(user.points)}\n\n` +
+                `💡 예치 후 ${CONFIG.deposit.graceMinutes}분부터 이자가 붙기 시작합니다. (시간당 ${CONFIG.deposit.hourlyInterestRate}%)`
+            );
+        }
+
+        if (cmd === '!출금') {
+            if (user.deposit.amount <= 0) return reply('❌ 예금이 없습니다.');
+            const accrued = calcDepositInterest(user.deposit);
+            const totalAvailable = user.deposit.amount + accrued;
+            let amt;
+            if (args[0] === '전액') amt = totalAvailable;
+            else amt = parseAmount(args[0] || '');
+            if (isNaN(amt) || amt <= 0) return reply('❌ !출금 [금액or전액]');
+            if (amt > totalAvailable) amt = totalAvailable;
+
+            const remaining = totalAvailable - amt;
+            user.points += amt;
+            if (remaining <= 0) {
+                user.deposit = { amount: 0, depositedAt: 0 };
+            } else {
+                user.deposit.amount = remaining;
+                user.deposit.depositedAt = Date.now(); // 남은 원금 기준으로 이자 타이머 재시작
+            }
+            saveData(db);
+            return reply(
+                `🏦 [출금 완료]\n출금액: +${formatKRW(amt)}` +
+                (accrued > 0 ? ` (이자 ${formatKRW(accrued)} 포함)` : '') +
+                `\n남은 예금: ${formatKRW(user.deposit.amount)}\n잔액: ${formatKRW(user.points)}`
+            );
+        }
+
+        if (cmd === '!예금조회') {
+            if (user.deposit.amount <= 0) return reply('✅ 현재 예금 없음');
+            const accrued = calcDepositInterest(user.deposit);
+            const elapsedMin = ((Date.now() - user.deposit.depositedAt) / 60000);
+            const graceLeft = Math.max(0, CONFIG.deposit.graceMinutes - elapsedMin);
+            return reply(
+                `🏦 [예금 현황]\n─────────────────────\n` +
+                `원금: ${formatKRW(user.deposit.amount)}\n` +
+                `경과 시간: ${(elapsedMin/60).toFixed(1)}시간\n` +
+                `시간당 이자율: ${CONFIG.deposit.hourlyInterestRate}%\n` +
+                (graceLeft > 0 ? `⏳ 이자 발생까지 ${graceLeft.toFixed(1)}분 남음\n` : '') +
+                `누적 이자: ${formatKRW(accrued)}\n` +
+                `합계(출금 시): ${formatKRW(user.deposit.amount + accrued)}`
             );
         }
 
