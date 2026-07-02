@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+const PORT = 3001;
 const DATA_FILE = path.join(__dirname, 'users.json');
 const MARKET_FILE = path.join(__dirname, 'market.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -1767,11 +1767,14 @@ server.on('message', (msg, rinfo) => {
         const db = loadData();
         const user = ensureUser(db, sender);
 
+        // 잔액 최저 2000원 보장 — 명령 처리 전에 먼저 적용 후 저장
+        if (user.points < MIN_BALANCE) {
+            user.points = MIN_BALANCE;
+            saveData(db);
+        }
+
         const reply = (text) => {
-            // 잔액 최저 보장 체크 (게임/도박 후 자동 충전)
-            const balanceMsg = checkMinBalance(user);
-            const finalText = balanceMsg ? `${String(text)}\n\n${balanceMsg}` : String(text);
-            const buf = Buffer.from(finalText, 'utf-8');
+            const buf = Buffer.from(String(text), 'utf-8');
             server.send(buf, 0, buf.length, rinfo.port, rinfo.address);
         };
 
