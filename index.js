@@ -410,6 +410,198 @@ function calcHuntSuccessRate(userPower, recommendedPower) {
     return Math.min(95, Math.max(5, Math.round(rate)));
 }
 
+// ─────────────────────────────────────────────
+// Phase 4: 레이드 보스
+// ─────────────────────────────────────────────
+const RAID_BOSSES = [
+    {
+        name: '킹 슬라임', grade: '초급', recommendedPower: 200,
+        maxHp: 500, atk: 12, def: 3,
+        gold: 5000, stones: 5, souls: 1,
+        enrageHp: 0.3, // HP 30% 이하에서 광폭화
+        enrageAtkMult: 1.8,
+        desc: '거대한 젤리 덩어리. 작은 슬라임들을 흡수해 힘을 키웠다.'
+    },
+    {
+        name: '숲의 수호자', grade: '중급', recommendedPower: 800,
+        maxHp: 1500, atk: 30, def: 10,
+        gold: 20000, stones: 15, souls: 3,
+        enrageHp: 0.3, enrageAtkMult: 2.0,
+        desc: '고대 숲을 지키는 정령. 분노하면 자연의 힘을 해방한다.'
+    },
+    {
+        name: '철갑 골렘', grade: '고급', recommendedPower: 3000,
+        maxHp: 5000, atk: 70, def: 30,
+        gold: 80000, stones: 40, souls: 8,
+        enrageHp: 0.25, enrageAtkMult: 2.2,
+        desc: '폐광에서 발굴된 고대 전쟁 병기. 분노 시 핵심 코어가 폭발한다.'
+    },
+    {
+        name: '빙하 용', grade: '영웅', recommendedPower: 12000,
+        maxHp: 15000, atk: 180, def: 70,
+        gold: 300000, stones: 100, souls: 20,
+        enrageHp: 0.25, enrageAtkMult: 2.5,
+        desc: '얼음 동굴의 지배자. 광폭화하면 절대영도 브레스를 쏟아낸다.'
+    },
+    {
+        name: '용암 군주', grade: '전설', recommendedPower: 50000,
+        maxHp: 50000, atk: 500, def: 150,
+        gold: 1000000, stones: 250, souls: 50,
+        enrageHp: 0.3, enrageAtkMult: 2.5,
+        desc: '용의 둥지 깊숙이 군림하는 불의 지배자.'
+    },
+    {
+        name: '천공의 군주', grade: '신화', recommendedPower: 200000,
+        maxHp: 200000, atk: 1500, def: 400,
+        gold: 5000000, stones: 600, souls: 120,
+        enrageHp: 0.3, enrageAtkMult: 3.0,
+        desc: '하늘 위 섬에서 세계를 내려다보는 존재.'
+    },
+    {
+        name: '혼돈의 지배자', grade: '태초', recommendedPower: 1000000,
+        maxHp: 1000000, atk: 5000, def: 1000,
+        gold: 30000000, stones: 2000, souls: 500,
+        enrageHp: 0.3, enrageAtkMult: 3.5,
+        desc: '모든 것의 근원이자 끝. 세계의 질서를 파괴하려 한다.'
+    }
+];
+
+// 진행 중인 레이드 세션 (메모리 상 관리, 서버 재시작 시 초기화)
+const raidSessions = {}; // roomId -> session
+
+function getRaidBoss(name) {
+    return RAID_BOSSES.find(b => b.name === name) || null;
+}
+
+// 파티원 스킬 레이드 적용 (전투 중 발동)
+function applyPartySkillsRaid(user, state) {
+    const effects = { atkMult: 1, defMult: 1, healRatio: 0, crit: false, pierce: false, doubleAtk: false, ultimate: false };
+    const procBonus = getEquipmentEffectValue(user, 'proc') / 100; // 용병스킬발동률 옵션 합산
+    for (const name of (user.activeParty || [])) {
+        const info = PARTY_MEMBERS[name];
+        if (!info) continue;
+        const p = user.partyMembers[name];
+        const baseRate = { atkBuff: 20, defBuff: 20, heal: 25, critUp: 25, pierce: 30, doubleAtk: 30, ultimate: 35 }[info.skill] || 20;
+        const rate = Math.min(95, baseRate + procBonus * 100);
+        if (Math.random() * 100 < rate) {
+            const lvBonus = 1 + (p.level || 0) * 0.05;
+            switch (info.skill) {
+                case 'atkBuff':   effects.atkMult  += 0.2 * lvBonus; break;
+                case 'defBuff':   effects.defMult  += 0.3 * lvBonus; break;
+                case 'heal':      effects.healRatio += 0.15 * lvBonus; break;
+                case 'critUp':    effects.crit      = true; break;
+                case 'pierce':    effects.pierce    = true; break;
+                case 'doubleAtk': effects.doubleAtk = true; break;
+                case 'ultimate':  effects.ultimate  = true; break;
+            }
+        }
+    }
+    return effects;
+}
+
+// 장비 특수옵션 값 합산
+function getEquipmentEffectValue(user, effectId) {
+    let total = 0;
+    for (const slot of ['weapon','armor','shield','ring1','ring2']) {
+        const it = user.equipment[slot];
+        if (it && !it.broken && it.effect && it.effect.id === effectId) {
+            total += it.effect.value || 0;
+        }
+    }
+    return total;
+}
+
+// 레이드 한 턴 전투 계산
+function raidTurn(user, session, stat) {
+    const boss = session.boss;
+    const log = [];
+
+    const critChance   = getEquipmentEffectValue(user, 'crit');
+    const critDmgBonus = getEquipmentEffectValue(user, 'critdmg') / 100;
+    const piercePct    = getEquipmentEffectValue(user, 'pierce') / 100;
+    const bossDmgBonus = getEquipmentEffectValue(user, 'bossdmg') / 100;
+    const lifestealPct = getEquipmentEffectValue(user, 'lifesteal') / 100;
+    const thornsPct    = getEquipmentEffectValue(user, 'thorns') / 100;
+    const dodgePct     = getEquipmentEffectValue(user, 'dodge');
+    const regenPct     = getEquipmentEffectValue(user, 'regen');
+    const guardPct     = getEquipmentEffectValue(user, 'guard') / 100;
+
+    // 파티원 스킬 발동
+    const skills = applyPartySkillsRaid(user, session);
+    if (skills.atkMult > 1)    log.push(`⚡ 용병 버프: 공격력 ×${skills.atkMult.toFixed(2)}`);
+    if (skills.defMult > 1)    log.push(`🛡️ 용병 방어: 피해 ×${(1/skills.defMult).toFixed(2)}`);
+    if (skills.crit)           log.push(`🎯 용병 크리티컬 확정!`);
+    if (skills.pierce)         log.push(`🗡️ 용병 관통 발동!`);
+    if (skills.doubleAtk)      log.push(`⚡⚡ 용병 연격 발동!`);
+    if (skills.ultimate)       { skills.crit = true; skills.pierce = true; skills.doubleAtk = true; skills.healRatio += 0.1; log.push(`🌌 진명해방!`); }
+
+    // HP 회복(재생 옵션)
+    if (regenPct > 0) {
+        const regen = Math.floor(session.maxHp * regenPct / 100);
+        session.hp = Math.min(session.maxHp, session.hp + regen);
+        log.push(`💧 재생: +${regen} HP`);
+    }
+
+    // 플레이어 공격
+    const isCrit = skills.crit || Math.random() * 100 < critChance;
+    const effDef  = Math.max(0, boss.def * (1 - (skills.pierce ? 1 : piercePct)));
+    let rawDmg    = Math.max(1, stat.atk * skills.atkMult - effDef);
+    if (isCrit) rawDmg *= (1.5 + critDmgBonus);
+    rawDmg *= (1 + bossDmgBonus);
+    let dmg = Math.floor(rawDmg);
+    const hitCount = (skills.doubleAtk ? 2 : 1);
+
+    let totalDmg = 0;
+    for (let i = 0; i < hitCount; i++) totalDmg += dmg;
+    session.bossHp = Math.max(0, session.bossHp - totalDmg);
+    log.push(`🗡️ 플레이어: ${totalDmg} 피해${isCrit ? ' (크리!)' : ''}${hitCount > 1 ? ' (연타)' : ''} → 보스 HP ${session.bossHp}/${boss.maxHp}`);
+
+    // 흡혈
+    if (lifestealPct > 0 && totalDmg > 0) {
+        const heal = Math.floor(totalDmg * lifestealPct);
+        session.hp = Math.min(session.maxHp, session.hp + heal);
+        log.push(`🩸 흡혈: +${heal} HP`);
+    }
+
+    // 파티 힐
+    if (skills.healRatio > 0) {
+        const heal = Math.floor(session.maxHp * skills.healRatio);
+        session.hp = Math.min(session.maxHp, session.hp + heal);
+        log.push(`💚 힐: +${heal} HP`);
+    }
+
+    if (session.bossHp <= 0) return { log, result: 'win' };
+
+    // 보스 광폭화 확인
+    const enrageThreshold = Math.floor(boss.maxHp * boss.enrageHp);
+    if (session.bossHp <= enrageThreshold && !session.enraged) {
+        session.enraged = true;
+        log.push(`💢 [광폭화!!] ${boss.name} 이(가) 분노했습니다! 공격력 ×${boss.enrageAtkMult}`);
+    }
+
+    // 보스 공격 (회피 먼저)
+    if (dodgePct > 0 && Math.random() * 100 < dodgePct) {
+        log.push(`💨 회피 성공!`);
+    } else {
+        const bossAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
+        const damageReduction = guardPct + (1 - 1 / skills.defMult);
+        let bossDmg = Math.max(1, Math.floor(bossAtk * (1 - Math.min(0.8, damageReduction))));
+        session.hp -= bossDmg;
+        log.push(`👹 보스: ${bossDmg} 피해 → 내 HP ${Math.max(0, session.hp)}/${session.maxHp}`);
+
+        // 반격(가시)
+        if (thornsPct > 0) {
+            const thorns = Math.floor(bossAtk * thornsPct);
+            session.bossHp = Math.max(0, session.bossHp - thorns);
+            log.push(`🌵 반격: 보스에게 ${thorns} 피해`);
+            if (session.bossHp <= 0) return { log, result: 'win' };
+        }
+    }
+
+    if (session.hp <= 0) return { log, result: 'lose' };
+    return { log, result: 'continue' };
+}
+
 // 가챠 아이템 풀 (등급별)
 const GACHA_ITEM_POOL = {
     꽝: [
@@ -698,6 +890,7 @@ function createDefaultUser() {
         huntCount: 0,        // 사냥 횟수
         huntWins: 0,         // 사냥 성공
         bossKills: {},       // { '킹슬라임': N, ... } 보스별 처치 횟수
+        lastRaidAt: 0,       // 마지막 레이드 시작 시각 (쿨타임)
         firstBossClears: {}, // 최초 클리어 기록
         lastHuntAt: 0,       // 마지막 사냥 시각 (쿨타임)
         lastRaidAt: 0,       // 마지막 레이드 시각
@@ -1553,7 +1746,7 @@ server.on('message', (msg, rinfo) => {
                 ' !파티편성 [이름] [이름] [이름] — 파티 편성 (최대 3명)\n\n' +
                 '🗡️ [RPG - 장비]\n' +
                 ' !장비 / !장비인벤 — 장착/보유 장비 확인\n' +
-                ' !장비장착 [슬롯] [번호] / !장비해제 [슬롯]\n' +
+                ' !장비장착 [이름or번호] / !장비해제 [슬롯]\n' +
                 ' !장비강화 [슬롯] — 동일 부위/등급 10개+골드+강화석 소모\n' +
                 ' !장비판매 [번호]\n' +
                 ' !장비상점 / !장비구매 [부위] — 초급 장비 구매\n' +
@@ -1569,6 +1762,12 @@ server.on('message', (msg, rinfo) => {
                 ' !사냥터 — 사냥터 목록\n' +
                 ' !사냥 [사냥터명] — 사냥 시도 (실패 시 장비 파손 위험)\n' +
                 ' !장비수리 [슬롯] / !장비수리전체\n\n' +
+                '👹 [레이드]\n' +
+                ' !레이드목록 — 보스 목록/보상/처치 여부\n' +
+                ' !레이드 [보스이름] — 레이드 시작 (120초 쿨타임)\n' +
+                ' !공격 / !방어 / !후퇴 — 레이드 중 행동\n' +
+                ' !레이드현황 — 현재 전투 상황\n' +
+                ' ⚠️ 패배 시 장착 장비 1개 랜덤 파손\n\n' +
                 '💡 [금액 입력]\n' +
                 ' 숫자, 1만, 1.5억, 1조 모두 가능\n' +
                 ' 배팅: 올인/하프/삥/따당'
@@ -1777,7 +1976,8 @@ server.on('message', (msg, rinfo) => {
                 msg += `${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0}\n   ㄴ ${formatEquipLine(it)}\n`;
             }
             if (!hasEq) msg += '\n장착한 장비가 없습니다. !장비상점 에서 구매해보세요.\n';
-            msg += `─────────────────────\n!장비인벤 — 보유 장비 목록\n!장비장착 [슬롯] [인벤번호]`;
+            msg += `─────────────────────\n!장비인벤 — 보유 장비 목록
+!장비장착 [이름or번호]`;
             return reply(msg);
         }
 
@@ -1789,26 +1989,52 @@ server.on('message', (msg, rinfo) => {
                 const slotLabel = it.slotType === 'ring' ? '💍 반지' : SLOT_LABEL[it.slotType] || it.slotType;
                 msg += `[${i+1}] ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0} (${slotLabel})\n   ㄴ ${formatEquipLine(it)}\n`;
             });
-            msg += `─────────────────────\n!장비장착 [슬롯] [번호] / !장비판매 [번호]`;
+            msg += `─────────────────────\n!장비장착 [이름or번호] / !장비판매 [번호]`;
             return reply(msg);
         }
 
         if (cmd === '!장비장착') {
-            if (args.length < 2) return reply('❌ !장비장착 [슬롯] [인벤번호]\n(슬롯: 무기/방어구/방패/반지1/반지2)');
-            const slot = SLOT_ALIASES[args[0]];
-            if (!slot || slot === 'ring') return reply('❌ 슬롯은 무기/방어구/방패/반지1/반지2 중 하나여야 합니다.');
-            const idx = parseInt(args[1], 10) - 1;
+            if (args.length < 1) return reply('❌ !장비장착 [아이템이름or인벤번호]\n예) !장비장착 초급 무기 / !장비장착 3');
             const inv = user.equipmentInventory || [];
-            if (isNaN(idx) || idx < 0 || idx >= inv.length) return reply('❌ 인벤번호 오류. !장비인벤 으로 확인하세요.');
-            const item = inv[idx];
-            const requiredType = (slot === 'ring1' || slot === 'ring2') ? 'ring' : slot;
-            if (item.slotType !== requiredType) return reply(`❌ "${item.name}"은(는) ${SLOT_LABEL[slot]} 부위에 장착할 수 없습니다.`);
+            if (inv.length === 0) return reply('❌ 인벤토리가 비어있습니다. !장비인벤 확인');
+
+            let item = null, idx = -1;
+
+            // 숫자 단독 → 인벤 번호
+            const numArg = parseInt(args[0], 10);
+            if (!isNaN(numArg) && args.length === 1) {
+                idx = numArg - 1;
+            } else {
+                // 이름(부분일치 포함) — 여러 단어 조합 시도
+                const query = args.join(' ').trim().toLowerCase();
+                // 완전일치 우선, 그 다음 부분일치
+                idx = inv.findIndex(it => it.name.toLowerCase() === query);
+                if (idx === -1) idx = inv.findIndex(it => it.name.toLowerCase().includes(query));
+            }
+
+            if (idx < 0 || idx >= inv.length) return reply(`❌ 인벤에서 "${args.join(' ')}" 을(를) 찾을 수 없습니다.\n!장비인벤 으로 번호를 확인하거나, 정확한 이름을 입력하세요.`);
+            item = inv[idx];
+
+            // slotType 기준으로 자동 슬롯 결정
+            let targetSlot;
+            if (item.slotType === 'ring') {
+                // ring1 비어있으면 ring1, 아니면 ring2, 둘 다 있으면 ring1 교체
+                if (!user.equipment.ring1) targetSlot = 'ring1';
+                else if (!user.equipment.ring2) targetSlot = 'ring2';
+                else targetSlot = 'ring1'; // 둘 다 찼으면 ring1 교체
+            } else {
+                targetSlot = item.slotType; // weapon / armor / shield
+            }
+
             inv.splice(idx, 1);
-            const old = user.equipment[slot];
+            const old = user.equipment[targetSlot];
             if (old) inv.push(old);
-            user.equipment[slot] = item;
+            user.equipment[targetSlot] = item;
             saveData(db);
-            return reply(`✅ [장착 완료] ${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[item.grade]||''}${item.name} +${item.enhanceLevel||0}` + (old ? `\n(기존 장비는 인벤토리로 이동)` : ''));
+            let msg = `✅ [장착 완료] ${SLOT_LABEL[targetSlot]}: ${EQUIP_GRADE_EMOJI[item.grade]||''}${item.name} +${item.enhanceLevel||0}`;
+            if (item.effect) msg += `\n   ✨ 특수옵션: ${item.effect.desc}`;
+            if (old) msg += `\n(기존 "${old.name}" → 인벤토리로 이동)`;
+            return reply(msg);
         }
 
         if (cmd === '!장비해제') {
@@ -2123,6 +2349,155 @@ server.on('message', (msg, rinfo) => {
             for (const s of brokenSlots) user.equipment[s].broken = false;
             saveData(db);
             return reply(`🔧 [전체 수리 완료] ${brokenSlots.length}개 장비 수리\n지출: -${formatKRW(totalCost)}\n잔액: ${formatKRW(user.points)}`);
+        }
+
+        // ══════════════════════════════════════════════
+        // RPG - 레이드 (Phase 4) — 턴제 보스전
+        // ══════════════════════════════════════════════
+        if (cmd === '!레이드목록' || cmd === '!보스목록') {
+            let m = `👹 [레이드 보스 목록]\n─────────────────────\n`;
+            for (const b of RAID_BOSSES) {
+                const killed = (user.bossKills && user.bossKills[b.name]) || 0;
+                const killMark = killed > 0 ? ` ✅(${killed}킬)` : '';
+                m += `${EQUIP_GRADE_EMOJI[b.grade]||''}[${b.grade}] ${b.name}${killMark}\n`;
+                m += `   HP:${b.maxHp.toLocaleString()} 공격:${b.atk} 방어:${b.def} / 권장전투력 ${b.recommendedPower.toLocaleString()}\n`;
+                m += `   보상: 골드 ${formatKRW(b.gold)} / 강화석 ${b.stones} / 소울 ${b.souls}\n`;
+            }
+            m += `─────────────────────\n!레이드 [보스이름] — 레이드 시작`;
+            return reply(m);
+        }
+
+        if (cmd === '!레이드') {
+            if (args.length < 1) return reply('❌ !레이드 [보스이름]\n(!레이드목록 으로 보스 확인)');
+
+            // 파손 장비 확인
+            const brokenSlots2 = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && user.equipment[s].broken);
+            if (brokenSlots2.length > 0 && !args.includes('강행')) {
+                const list = brokenSlots2.map(s => `💔 ${SLOT_LABEL[s]}: ${user.equipment[s].name}`).join('\n');
+                return reply(
+                    `⚠️ 파손된 장비가 있습니다!\n${list}\n\n` +
+                    `!장비수리전체 로 수리하거나\n!레이드 ${args[0]} 강행 으로 파손 상태로 진행\n(파손 장비 스탯은 0으로 적용)`
+                );
+            }
+
+            const bossName = args.filter(a => a !== '강행').join(' ');
+            const boss = getRaidBoss(bossName);
+            if (!boss) return reply(`❌ 존재하지 않는 보스: ${bossName}\n(!레이드목록 참고)`);
+
+            const raidCooldown = 120 * 1000;
+            const raidRemain = raidCooldown - (Date.now() - (user.lastRaidAt || 0));
+            if (raidRemain > 0) return reply(`⏳ 레이드 쿨타임: ${Math.ceil(raidRemain/1000)}초 후 재시도 가능`);
+
+            promoteParty(user);
+            const stat = calcCharacterStat(user);
+            const power = calcCombatPower(stat);
+
+            user.lastRaidAt = Date.now();
+            saveData(db);
+
+            const sessionKey = `${room}:${sender}`;
+            raidSessions[sessionKey] = {
+                boss,
+                bossHp: boss.maxHp,
+                maxHp: stat.maxHp,
+                hp: stat.maxHp,
+                turn: 0,
+                enraged: false,
+                sender,
+                room,
+                stat
+            };
+
+            let m = `⚔️ [레이드 시작] ${EQUIP_GRADE_EMOJI[boss.grade]||''}${boss.name}\n`;
+            m += `${boss.desc}\n`;
+            m += `─────────────────────\n`;
+            m += `👹 보스 HP: ${boss.maxHp.toLocaleString()} / 공격: ${boss.atk} / 방어: ${boss.def}\n`;
+            m += `⚠️ HP ${Math.floor(boss.enrageHp*100)}% 이하 광폭화 (공격력 ×${boss.enrageAtkMult})\n`;
+            m += `─────────────────────\n`;
+            m += `🧑 내 HP: ${stat.maxHp} / 전투력: ${power.toLocaleString()}\n`;
+            if (user.activeParty.length > 0) m += `👥 파티: ${user.activeParty.join(', ')}\n`;
+            m += `─────────────────────\n`;
+            m += `!공격 — 일반 공격\n!방어 — 방어 자세 (다음 턴 받는 피해 40% 감소)\n!후퇴 — 레이드 포기`;
+            return reply(m);
+        }
+
+        // 레이드 중 행동 명령어
+        if (cmd === '!공격' || cmd === '!방어' || cmd === '!후퇴') {
+            const sessionKey = `${room}:${sender}`;
+            const session = raidSessions[sessionKey];
+            if (!session) return reply('❌ 진행 중인 레이드가 없습니다. !레이드 [보스이름] 으로 시작하세요.');
+
+            if (cmd === '!후퇴') {
+                delete raidSessions[sessionKey];
+                return reply('🏳️ 레이드에서 후퇴했습니다. (쿨타임 없이 재시도 가능)');
+            }
+
+            session.turn++;
+            const isDefending = cmd === '!방어';
+            if (isDefending) {
+                session.defendingNextTurn = true;
+            }
+
+            // 방어 자세 적용: 전 턴에 !방어를 한 경우
+            const defModeActive = !!session.defendingActive;
+            session.defendingActive = session.defendingNextTurn;
+            session.defendingNextTurn = false;
+
+            // 방어 모드면 stat.def 임시 증가 효과 시뮬레이션
+            const turnStat = { ...session.stat };
+            if (defModeActive) turnStat.def = Math.floor(turnStat.def * 1.4);
+
+            const { log, result } = raidTurn(user, session, turnStat);
+
+            let m = `⚔️ [${session.boss.name}] 턴 ${session.turn}${isDefending ? ' — 🛡️ 방어 자세' : ''}\n`;
+            m += `─────────────────────\n`;
+            if (defModeActive) m += `🛡️ 방어 자세 발동! (받는 피해 40% 감소)\n`;
+            m += log.join('\n') + '\n';
+            m += `─────────────────────\n`;
+            m += `👹 보스 HP: ${Math.max(0, session.bossHp)}/${session.boss.maxHp}\n`;
+            m += `❤️ 내 HP: ${Math.max(0, session.hp)}/${session.maxHp}\n`;
+
+            if (result === 'win') {
+                delete raidSessions[sessionKey];
+                user.bossKills = user.bossKills || {};
+                user.bossKills[session.boss.name] = (user.bossKills[session.boss.name] || 0) + 1;
+                user.points  += session.boss.gold;
+                user.stones   = (user.stones || 0) + session.boss.stones;
+                user.souls    = (user.souls  || 0) + session.boss.souls;
+                saveData(db);
+                m += `\n🎉🎊 [${session.boss.name} 처치!]\n`;
+                m += `보상: 골드 +${formatKRW(session.boss.gold)} / 강화석 +${session.boss.stones} / 소울 +${session.boss.souls}\n`;
+                m += `누적 처치: ${user.bossKills[session.boss.name]}회`;
+            } else if (result === 'lose') {
+                delete raidSessions[sessionKey];
+                // 장비 파손 패널티: 장착 장비 1개 랜덤 파손
+                const equipped = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && !user.equipment[s].broken);
+                let brokenName = null;
+                if (equipped.length > 0) {
+                    const slot = equipped[Math.floor(Math.random() * equipped.length)];
+                    user.equipment[slot].broken = true;
+                    brokenName = user.equipment[slot].name;
+                }
+                saveData(db);
+                m += `\n💀 [전투 패배]\n`;
+                if (brokenName) m += `💥 패널티: "${brokenName}" 이(가) 파손되었습니다!\n!장비수리 로 복구하세요.`;
+                else m += `(장착 장비 없음 — 패널티 없음)`;
+            } else {
+                m += `\n!공격 — 일반 공격 / !방어 — 이번 턴 방어자세 / !후퇴 — 포기`;
+            }
+            return reply(m);
+        }
+
+        if (cmd === '!레이드현황') {
+            const sessionKey = `${room}:${sender}`;
+            const session = raidSessions[sessionKey];
+            if (!session) return reply('❌ 진행 중인 레이드가 없습니다.');
+            return reply(
+                `⚔️ [레이드 현황] ${session.boss.name} — 턴 ${session.turn}\n` +
+                `👹 보스 HP: ${session.bossHp}/${session.boss.maxHp}${session.enraged ? ' 💢광폭화' : ''}\n` +
+                `❤️ 내 HP: ${session.hp}/${session.maxHp}\n` +
+                `!공격 / !방어 / !후퇴`
+            );
         }
 
         if (cmd === '!내스탯' || cmd === '!스탯') {
