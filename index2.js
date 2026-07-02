@@ -29,6 +29,28 @@ const DEFAULT_CONFIG = {
     coin: { updateIntervalMinutes: 10, maxChangePercent: 40 },
     loan: { maxRatio: 0.5, hourlyInterestRate: 5 },
     employee: { taxRate: 20 },
+    // Phase 2: 장비상자 (등급 고정 드랍, 부위만 랜덤)
+    equipmentBox: {
+        초급장비상자: { price: 50000 },
+        중급장비상자: { price: 300000 },
+        고급장비상자: { price: 2000000 },
+        영웅장비상자: { price: 15000000 },
+        전설장비상자: { price: 100000000 },
+        신화장비상자: { price: 800000000 }
+    },
+    // Phase 2: 직원상자 (등급 고정, 해당 등급 파티원 지급)
+    employeeBox: {
+        초급직원상자: { price: 80000 },
+        중급직원상자: { price: 500000 },
+        고급직원상자: { price: 3000000 },
+        영웅직원상자: { price: 20000000 },
+        전설직원상자: { price: 150000000 },
+        신화직원상자: { price: 1000000000 }
+    },
+    // 장비상자 개봉 시 부위별 드랍 확률(가중치)
+    equipDropRate: { weapon: 20, armor: 20, shield: 20, ring: 40 },
+    // 장비상점 (초급 등급만 판매)
+    equipShop: { weapon: 3000, armor: 3000, shield: 5000, ring: 8000 },
     newsAdmins: ['A', '박성빈'],
     quiz: {
         rewardPool: [
@@ -169,6 +191,123 @@ const PARTY_SKILL_MESSAGES = {
     doubleAtk: (n) => `⚡⚡ ${n}이(가) 잔영을 만들며 연격을 시전합니다!`,
     ultimate:  (n) => `🌌 ${n}이(가) 진명해방! 세계가 무너집니다!`
 };
+
+// ─────────────────────────────────────────────
+// Phase 2: 장비 시스템
+// ─────────────────────────────────────────────
+const EQUIP_GRADES = ['초급', '중급', '고급', '영웅', '전설', '신화', '태초'];
+const EQUIP_BOX_GRADES = ['초급', '중급', '고급', '영웅', '전설', '신화']; // 태초는 상자로 뽑지 않음
+const EQUIP_GRADE_EMOJI = { 초급: '⚪', 중급: '🟢', 고급: '🔵', 영웅: '🟣', 전설: '🟠', 신화: '🔴', 태초: '🌌' };
+
+// 부위별 등급 기본 스탯
+const WEAPON_ATK  = { 초급: 5,  중급: 15, 고급: 35, 영웅: 80,  전설: 150, 신화: 280, 태초: 500 };
+const ARMOR_DEF   = { 초급: 3,  중급: 8,  고급: 20, 영웅: 45,  전설: 80,  신화: 130, 태초: 200 };
+const ARMOR_HP    = { 초급: 30, 중급: 80, 고급: 180,영웅: 350, 전설: 550, 신화: 780, 태초: 1000 };
+const SHIELD_DEF  = { 초급: 5,  중급: 15, 고급: 35, 영웅: 70,  전설: 130, 신화: 200, 태초: 300 };
+const RING_BUDGET = { 초급: 4,  중급: 10, 고급: 25, 영웅: 55,  전설: 100, 신화: 180, 태초: 320 };
+
+const SLOT_LABEL = { weapon: '🗡️ 무기', armor: '🛡️ 방어구', shield: '🔰 방패', ring1: '💍 반지1', ring2: '💍 반지2' };
+const SLOT_ALIASES = {
+    무기: 'weapon', weapon: 'weapon',
+    방어구: 'armor', armor: 'armor',
+    방패: 'shield', shield: 'shield',
+    반지1: 'ring1', ring1: 'ring1',
+    반지2: 'ring2', ring2: 'ring2',
+    반지: 'ring' // 인벤/구매 시 부위타입으로만 쓰임(어느 반지칸이든 가능)
+};
+
+let EQUIP_ID_SEQ = 0;
+function nextEquipId() {
+    EQUIP_ID_SEQ += 1;
+    return `eq${Date.now().toString(36)}${EQUIP_ID_SEQ}${Math.floor(Math.random()*1000)}`;
+}
+
+// slotType: 'weapon' | 'armor' | 'shield' | 'ring' (반지는 장착시 ring1/ring2 선택)
+function createEquipmentItem(slotType, grade) {
+    let atk = 0, def = 0, hp = 0, name = '';
+    if (slotType === 'weapon') {
+        atk = WEAPON_ATK[grade] || 0;
+        name = `${grade} 무기`;
+    } else if (slotType === 'armor') {
+        def = ARMOR_DEF[grade] || 0;
+        hp  = ARMOR_HP[grade] || 0;
+        name = `${grade} 방어구`;
+    } else if (slotType === 'shield') {
+        def = SHIELD_DEF[grade] || 0;
+        name = `${grade} 방패`;
+    } else if (slotType === 'ring') {
+        const pool = ['atk', 'def', 'hp'];
+        const dual = Math.random() < 0.35;
+        const shuffled = [...pool].sort(() => Math.random() - 0.5);
+        const picks = dual ? shuffled.slice(0, 2) : [shuffled[0]];
+        const budget = RING_BUDGET[grade] || 0;
+        const per = dual ? budget / 2 : budget;
+        for (const stat of picks) {
+            if (stat === 'atk') atk += Math.round(per);
+            else if (stat === 'def') def += Math.round(per);
+            else hp += Math.round(per * 5); // HP는 체감상 크게
+        }
+        const labelMap = { atk: '공격', def: '방어', hp: '체력' };
+        name = `${grade} 반지(${picks.map(p => labelMap[p]).join('/')})`;
+    }
+    return { id: nextEquipId(), slotType, grade, name, atk, def, hp, enhanceLevel: 0 };
+}
+
+// 강화 적용 스탯 (레벨당 +15%)
+function effectiveItemStat(item) {
+    if (!item) return { atk: 0, def: 0, hp: 0 };
+    const mult = 1 + (item.enhanceLevel || 0) * 0.15;
+    return {
+        atk: Math.round((item.atk || 0) * mult),
+        def: Math.round((item.def || 0) * mult),
+        hp:  Math.round((item.hp  || 0) * mult)
+    };
+}
+
+// 강화 성공확률 (목표 레벨 1~10 기준, index 0 = +1강화)
+const ENHANCE_SUCCESS_RATE = [95, 90, 85, 80, 75, 70, 60, 50, 40, 30];
+// +7강화(index 6)부터 실패 시 파괴 확률 적용
+const ENHANCE_DESTROY_START_LEVEL = 7;
+const ENHANCE_DESTROY_RATE = { 7: 30, 8: 40, 9: 50, 10: 60 };
+
+const ENHANCE_GOLD_BASE  = { 초급: 5000,  중급: 20000, 고급: 80000,  영웅: 300000, 전설: 1200000, 신화: 5000000,  태초: 20000000 };
+const ENHANCE_STONE_BASE = { 초급: 5,     중급: 10,    고급: 20,     영웅: 40,     전설: 80,      신화: 150,      태초: 300 };
+
+function calcEnhanceCost(grade, targetLevel) {
+    return {
+        gold: (ENHANCE_GOLD_BASE[grade] || 5000) * targetLevel,
+        stones: (ENHANCE_STONE_BASE[grade] || 5) * targetLevel
+    };
+}
+
+// 장비상자/직원상자 개봉
+function rollEquipmentBox(boxType) {
+    const grade = boxType.replace('장비상자', '');
+    if (!EQUIP_GRADES.includes(grade)) return null;
+    const rates = CONFIG.equipDropRate || { weapon: 20, armor: 20, shield: 20, ring: 40 };
+    const total = Object.values(rates).reduce((s, v) => s + v, 0);
+    let r = Math.random() * total;
+    let slotType = 'weapon';
+    for (const [k, w] of Object.entries(rates)) {
+        if (r < w) { slotType = k; break; }
+        r -= w;
+    }
+    return createEquipmentItem(slotType, grade);
+}
+
+function rollEmployeeBox(boxType) {
+    const grade = boxType.replace('직원상자', '');
+    const name = Object.keys(PARTY_MEMBERS).find(n => PARTY_MEMBERS[n].grade === grade);
+    return name || null;
+}
+
+// 판매가 (등급/부위 기준 골드 환산)
+const SELL_PRICE_BASE = { 초급: 2000, 중급: 8000, 고급: 30000, 영웅: 100000, 전설: 400000, 신화: 1500000, 태초: 6000000 };
+function calcSellPrice(item) {
+    const base = SELL_PRICE_BASE[item.grade] || 1000;
+    const enhanceBonus = 1 + (item.enhanceLevel || 0) * 0.2;
+    return Math.floor(base * enhanceBonus);
+}
 
 // 가챠 아이템 풀 (등급별)
 const GACHA_ITEM_POOL = {
@@ -452,6 +591,7 @@ function createDefaultUser() {
         partyMembers: {},    // { '김판돌': { count: N, level: N } } — 10명 모으면 +1강화
         activeParty: [],     // 편성된 파티원 이름 배열 (최대 3)
         equipment: { weapon: null, armor: null, shield: null, ring1: null, ring2: null },
+        equipmentInventory: [], // 보유 장비 (미장착) 목록
         skills: [],          // 학습한 스킬 목록
         huntCount: 0,        // 사냥 횟수
         huntWins: 0,         // 사냥 성공
@@ -506,6 +646,25 @@ function ensureUser(db, name) {
     else {
         for (const slot of ['weapon','armor','shield','ring1','ring2']) {
             if (!(slot in u.equipment)) u.equipment[slot] = null;
+            const it = u.equipment[slot];
+            if (it && typeof it === 'object') {
+                if (typeof it.enhanceLevel !== 'number' || isNaN(it.enhanceLevel)) it.enhanceLevel = 0;
+                if (typeof it.atk !== 'number') it.atk = 0;
+                if (typeof it.def !== 'number') it.def = 0;
+                if (typeof it.hp !== 'number') it.hp = 0;
+                if (!it.id) it.id = nextEquipId();
+            }
+        }
+    }
+    if (!Array.isArray(u.equipmentInventory)) u.equipmentInventory = [];
+    else {
+        u.equipmentInventory = u.equipmentInventory.filter(it => it && typeof it === 'object');
+        for (const it of u.equipmentInventory) {
+            if (typeof it.enhanceLevel !== 'number' || isNaN(it.enhanceLevel)) it.enhanceLevel = 0;
+            if (typeof it.atk !== 'number') it.atk = 0;
+            if (typeof it.def !== 'number') it.def = 0;
+            if (typeof it.hp !== 'number') it.hp = 0;
+            if (!it.id) it.id = nextEquipId();
         }
     }
     if (!Array.isArray(u.skills)) u.skills = [];
@@ -659,16 +818,17 @@ function calcPartyMemberPower(name, level) {
     };
 }
 
-// 장비 스탯 계산 (아직 장비 시스템 미구현 — Phase 2에서 정의됨. 여기선 null-safe)
+// 장비 스탯 계산 (강화 레벨 반영)
 function calcEquipmentStat(equipment) {
     let atk = 0, def = 0, hp = 0;
     if (!equipment) return { atk, def, hp };
     for (const slot of Object.keys(equipment)) {
         const eq = equipment[slot];
         if (!eq) continue;
-        atk += eq.atk || 0;
-        def += eq.def || 0;
-        hp  += eq.hp  || 0;
+        const eff = effectiveItemStat(eq);
+        atk += eff.atk;
+        def += eff.def;
+        hp  += eff.hp;
     }
     return { atk, def, hp };
 }
@@ -1156,6 +1316,22 @@ server.on('message', (msg, rinfo) => {
             return reply(`🛡️ [소울 지급] ${args[0]}: ${qty>=0?'+':''}${qty}\n현재: ${target.souls.toLocaleString()}개`);
         }
 
+        if (cmd === '!관리자장비지급') {
+            if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
+            if (args.length < 3) return reply('❌ !관리자장비지급 [닉네임] [부위] [등급] [수량(기본1)]\n(부위: 무기/방어구/방패/반지)\n(등급: 초급/중급/고급/영웅/전설/신화/태초)');
+            const target = ensureUser(db, args[0]);
+            const raw = SLOT_ALIASES[args[1]];
+            const slotType = (raw === 'ring1' || raw === 'ring2') ? 'ring' : raw;
+            if (!slotType) return reply('❌ 부위는 무기/방어구/방패/반지 중 하나여야 합니다.');
+            const grade = args[2];
+            if (!EQUIP_GRADES.includes(grade)) return reply(`❌ 존재하지 않는 등급: ${grade}\n(가능: ${EQUIP_GRADES.join(', ')})`);
+            const qty = parseInt(args[3] || '1', 10);
+            if (isNaN(qty) || qty < 1) return reply('❌ 수량 오류');
+            for (let i = 0; i < qty; i++) target.equipmentInventory.push(createEquipmentItem(slotType, grade));
+            saveData(db);
+            return reply(`🛡️ [장비 지급] ${args[0]}에게 ${grade} ${args[1]} x${qty} 지급 완료 (인벤토리 확인: !장비인벤)`);
+        }
+
         if (cmd === '!관리자아이템지급') {
             if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
             // !관리자아이템지급 [닉네임] [아이템타입] [수량]
@@ -1240,11 +1416,19 @@ server.on('message', (msg, rinfo) => {
                 ' !코인시세 — 코인 시세 확인\n' +
                 ' !매수 [코인명] [금액or수량or풀]\n' +
                 ' !매도 [코인명] [금액or수량or풀]\n\n' +
-                '⚔️ [RPG - Phase 1]\n' +
+                '⚔️ [RPG - 파티]\n' +
                 ' !내스탯 — 캐릭터 스탯 확인\n' +
                 ' !파티 — 편성된 파티 확인\n' +
                 ' !파티원 — 보유 파티원 목록\n' +
                 ' !파티편성 [이름] [이름] [이름] — 파티 편성 (최대 3명)\n\n' +
+                '🗡️ [RPG - 장비]\n' +
+                ' !장비 / !장비인벤 — 장착/보유 장비 확인\n' +
+                ' !장비장착 [슬롯] [번호] / !장비해제 [슬롯]\n' +
+                ' !장비강화 [슬롯] — 동일 부위/등급 10개+골드+강화석 소모\n' +
+                ' !장비판매 [번호]\n' +
+                ' !장비상점 / !장비구매 [부위] — 초급 장비 구매\n' +
+                ' !장비상자목록 / !장비상자구매 / !장비상자열기\n' +
+                ' !직원상자목록 / !직원상자구매 / !직원상자열기\n\n' +
                 '🏦 [은행]\n' +
                 ' !대출 [금액] — 대출 (자산 50% 한도)\n' +
                 ' !상환 [금액or전액] — 대출 상환\n' +
@@ -1376,7 +1560,7 @@ server.on('message', (msg, rinfo) => {
             saveData(db);
             const owned = Object.entries(user.partyMembers || {}).filter(([,p]) => (p.count||0) > 0 || (p.level||0) > 0);
             if (owned.length === 0) {
-                return reply('❌ 보유 파티원이 없습니다.\n직원상자에서 뽑아보세요! (Phase 2에서 구현 예정)');
+                return reply('❌ 보유 파티원이 없습니다.\n!직원상자구매 로 구매 후 !직원상자열기 로 뽑아보세요.');
             }
             let msg = `👥 [${sender}님의 파티원]\n─────────────────────\n`;
             owned.sort((a,b) => (b[1].level - a[1].level) || (b[1].count - a[1].count));
@@ -1437,6 +1621,268 @@ server.on('message', (msg, rinfo) => {
             return reply('✅ 파티 편성이 해제되었습니다.');
         }
 
+        // ══════════════════════════════════════════════
+        // RPG - 장비 시스템 (Phase 2)
+        // ══════════════════════════════════════════════
+        if (cmd === '!장비') {
+            const eq = user.equipment || {};
+            let hasEq = false;
+            let msg = `🗡️ [${sender}님의 장착 장비]\n─────────────────────\n`;
+            for (const slot of ['weapon','armor','shield','ring1','ring2']) {
+                const it = eq[slot];
+                if (!it) { msg += `${SLOT_LABEL[slot]}: (없음)\n`; continue; }
+                hasEq = true;
+                const eff = effectiveItemStat(it);
+                const statStr = [
+                    eff.atk ? `공격+${eff.atk}` : null,
+                    eff.def ? `방어+${eff.def}` : null,
+                    eff.hp  ? `체력+${eff.hp}`  : null
+                ].filter(Boolean).join(' ');
+                msg += `${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0}\n   ㄴ ${statStr}\n`;
+            }
+            if (!hasEq) msg += '\n장착한 장비가 없습니다. !장비상점 에서 구매해보세요.\n';
+            msg += `─────────────────────\n!장비인벤 — 보유 장비 목록\n!장비장착 [슬롯] [인벤번호]`;
+            return reply(msg);
+        }
+
+        if (cmd === '!장비인벤') {
+            const inv = user.equipmentInventory || [];
+            if (inv.length === 0) return reply('❌ 보유한 미장착 장비가 없습니다.\n!장비상자열기 또는 !장비상점 을 이용해보세요.');
+            let msg = `🎒 [${sender}님의 장비 인벤토리]\n─────────────────────\n`;
+            inv.forEach((it, i) => {
+                const eff = effectiveItemStat(it);
+                const statStr = [
+                    eff.atk ? `공격+${eff.atk}` : null,
+                    eff.def ? `방어+${eff.def}` : null,
+                    eff.hp  ? `체력+${eff.hp}`  : null
+                ].filter(Boolean).join(' ');
+                const slotLabel = it.slotType === 'ring' ? '💍 반지' : SLOT_LABEL[it.slotType] || it.slotType;
+                msg += `[${i+1}] ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0} (${slotLabel})\n   ㄴ ${statStr}\n`;
+            });
+            msg += `─────────────────────\n!장비장착 [슬롯] [번호] / !장비판매 [번호]`;
+            return reply(msg);
+        }
+
+        if (cmd === '!장비장착') {
+            if (args.length < 2) return reply('❌ !장비장착 [슬롯] [인벤번호]\n(슬롯: 무기/방어구/방패/반지1/반지2)');
+            const slot = SLOT_ALIASES[args[0]];
+            if (!slot || slot === 'ring') return reply('❌ 슬롯은 무기/방어구/방패/반지1/반지2 중 하나여야 합니다.');
+            const idx = parseInt(args[1], 10) - 1;
+            const inv = user.equipmentInventory || [];
+            if (isNaN(idx) || idx < 0 || idx >= inv.length) return reply('❌ 인벤번호 오류. !장비인벤 으로 확인하세요.');
+            const item = inv[idx];
+            const requiredType = (slot === 'ring1' || slot === 'ring2') ? 'ring' : slot;
+            if (item.slotType !== requiredType) return reply(`❌ "${item.name}"은(는) ${SLOT_LABEL[slot]} 부위에 장착할 수 없습니다.`);
+            inv.splice(idx, 1);
+            const old = user.equipment[slot];
+            if (old) inv.push(old);
+            user.equipment[slot] = item;
+            saveData(db);
+            return reply(`✅ [장착 완료] ${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[item.grade]||''}${item.name} +${item.enhanceLevel||0}` + (old ? `\n(기존 장비는 인벤토리로 이동)` : ''));
+        }
+
+        if (cmd === '!장비해제') {
+            if (args.length < 1) return reply('❌ !장비해제 [슬롯]\n(슬롯: 무기/방어구/방패/반지1/반지2)');
+            const slot = SLOT_ALIASES[args[0]];
+            if (!slot || slot === 'ring') return reply('❌ 슬롯은 무기/방어구/방패/반지1/반지2 중 하나여야 합니다.');
+            const item = user.equipment[slot];
+            if (!item) return reply(`❌ ${SLOT_LABEL[slot]}에 장착된 장비가 없습니다.`);
+            user.equipment[slot] = null;
+            user.equipmentInventory.push(item);
+            saveData(db);
+            return reply(`✅ [해제 완료] ${SLOT_LABEL[slot]}: ${item.name} → 인벤토리로 이동`);
+        }
+
+        if (cmd === '!장비판매') {
+            if (args.length < 1) return reply('❌ !장비판매 [인벤번호]');
+            const idx = parseInt(args[0], 10) - 1;
+            const inv = user.equipmentInventory || [];
+            if (isNaN(idx) || idx < 0 || idx >= inv.length) return reply('❌ 인벤번호 오류. !장비인벤 으로 확인하세요.');
+            const item = inv[idx];
+            const price = calcSellPrice(item);
+            inv.splice(idx, 1);
+            user.points += price;
+            saveData(db);
+            return reply(`💰 [판매 완료] ${EQUIP_GRADE_EMOJI[item.grade]||''}${item.name} +${item.enhanceLevel||0}\n획득: +${formatKRW(price)}\n잔액: ${formatKRW(user.points)}`);
+        }
+
+        if (cmd === '!장비강화') {
+            if (args.length < 1) return reply('❌ !장비강화 [슬롯]\n(슬롯: 무기/방어구/방패/반지1/반지2)');
+            const slot = SLOT_ALIASES[args[0]];
+            if (!slot || slot === 'ring') return reply('❌ 슬롯은 무기/방어구/방패/반지1/반지2 중 하나여야 합니다.');
+            const item = user.equipment[slot];
+            if (!item) return reply(`❌ ${SLOT_LABEL[slot]}에 장착된 장비가 없습니다.`);
+            if ((item.enhanceLevel || 0) >= 10) return reply('✨ 이미 최대 강화(+10) 상태입니다.');
+
+            const targetLevel = (item.enhanceLevel || 0) + 1;
+            const matchType = item.slotType;
+            const fodderIdxs = [];
+            user.equipmentInventory.forEach((it, i) => {
+                if (it.slotType === matchType && it.grade === item.grade) fodderIdxs.push(i);
+            });
+            const slotTypeLabel = matchType === 'weapon' ? '무기' : matchType === 'armor' ? '방어구' : matchType === 'shield' ? '방패' : '반지';
+            if (fodderIdxs.length < 10) {
+                return reply(`❌ 재료 부족: 같은 부위/등급 장비가 인벤토리에 ${fodderIdxs.length}/10개 있습니다.\n(${item.grade} ${slotTypeLabel} 10개 필요)`);
+            }
+            const cost = calcEnhanceCost(item.grade, targetLevel);
+            if (user.points < cost.gold) return reply(`❌ 골드 부족 (필요: ${formatKRW(cost.gold)})`);
+            if ((user.stones || 0) < cost.stones) return reply(`❌ 강화석 부족 (필요: ${cost.stones}개, 보유: ${user.stones || 0}개)`);
+
+            const consumeIdxs = fodderIdxs.slice(0, 10).sort((a, b) => b - a);
+            for (const i of consumeIdxs) user.equipmentInventory.splice(i, 1);
+            user.points -= cost.gold;
+            user.stones -= cost.stones;
+
+            const successRate = ENHANCE_SUCCESS_RATE[targetLevel - 1] ?? 30;
+            const roll = Math.random() * 100;
+
+            let msg = `🔨 [장비강화 시도] ${SLOT_LABEL[slot]} ${item.name} +${item.enhanceLevel} → +${targetLevel}\n`;
+            msg += `소모: 재료10개 / ${formatKRW(cost.gold)} / 강화석${cost.stones}개\n성공확률: ${successRate}%\n─────────────────────\n`;
+
+            if (roll < successRate) {
+                item.enhanceLevel = targetLevel;
+                const eff = effectiveItemStat(item);
+                const statStr = [eff.atk?`공격+${eff.atk}`:null, eff.def?`방어+${eff.def}`:null, eff.hp?`체력+${eff.hp}`:null].filter(Boolean).join(' ');
+                msg += `🎉 강화 성공! +${targetLevel} 달성\n   ㄴ ${statStr}`;
+            } else if (targetLevel < ENHANCE_DESTROY_START_LEVEL) {
+                const before = item.enhanceLevel;
+                item.enhanceLevel = Math.max(0, item.enhanceLevel - 1);
+                msg += `💥 강화 실패... 레벨 ${before>0?`-1 (+${before} → +${item.enhanceLevel})`:'유지 (+0)'}`;
+            } else {
+                const destroyChance = ENHANCE_DESTROY_RATE[targetLevel] || 0;
+                const destroyRoll = Math.random() * 100;
+                if (destroyRoll < destroyChance) {
+                    user.equipment[slot] = null;
+                    msg += `💀 강화 실패... 장비가 파괴되었습니다!`;
+                } else {
+                    msg += `💥 강화 실패했지만 장비는 파괴되지 않았습니다. (레벨 유지: +${item.enhanceLevel})`;
+                }
+            }
+            saveData(db);
+            msg += `\n─────────────────────\n잔액: ${formatKRW(user.points)} / 강화석: ${user.stones}개`;
+            return reply(msg);
+        }
+
+        if (cmd === '!장비상점') {
+            let msg = `🏪 [장비상점 — 초급 장비 세트]\n─────────────────────\n`;
+            msg += `무기 — ${formatKRW(CONFIG.equipShop.weapon)}\n`;
+            msg += `방어구 — ${formatKRW(CONFIG.equipShop.armor)}\n`;
+            msg += `방패 — ${formatKRW(CONFIG.equipShop.shield)}\n`;
+            msg += `반지(랜덤옵션) — ${formatKRW(CONFIG.equipShop.ring)}\n`;
+            msg += `─────────────────────\n!장비구매 [부위] (예: !장비구매 무기)`;
+            return reply(msg);
+        }
+
+        if (cmd === '!장비구매') {
+            if (args.length < 1) return reply('❌ !장비구매 [부위] (무기/방어구/방패/반지)');
+            const raw = SLOT_ALIASES[args[0]];
+            const slotType = (raw === 'ring1' || raw === 'ring2') ? 'ring' : raw;
+            if (!slotType || !CONFIG.equipShop[slotType]) return reply('❌ 부위는 무기/방어구/방패/반지 중 하나여야 합니다.');
+            const price = CONFIG.equipShop[slotType];
+            if (user.points < price) return reply(`❌ 자금 부족 (필요: ${formatKRW(price)})`);
+            user.points -= price;
+            const item = createEquipmentItem(slotType, '초급');
+            user.equipmentInventory.push(item);
+            saveData(db);
+            return reply(`🏪 [구매 완료] ${item.name}\n지출: -${formatKRW(price)}\n잔액: ${formatKRW(user.points)}\n\n!장비인벤 확인 후 !장비장착 으로 착용하세요.`);
+        }
+
+        if (cmd === '!장비상자목록') {
+            let m = '📦 [장비상자 목록]\n─────────────────────\n';
+            for (const [type, cfg] of Object.entries(CONFIG.equipmentBox)) {
+                m += `${type} — ${formatKRW(cfg.price)}\n`;
+            }
+            m += '\n5부위(무기/방어구/방패/반지) 중 랜덤 드랍, 등급은 상자와 동일\n!장비상자구매 [종류] [수량]\n!장비상자열기 [종류] [수량]';
+            return reply(m);
+        }
+
+        if (cmd === '!장비상자구매') {
+            if (args.length < 1) return reply('❌ !장비상자구매 [종류] [수량(기본1)]\n(!장비상자목록 참고)');
+            const boxType = args[0];
+            const qty = parseInt(args[1] || '1', 10);
+            if (!CONFIG.equipmentBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
+            if (isNaN(qty) || qty < 1 || qty > 100) return reply('❌ 수량은 1~100');
+            const cost = CONFIG.equipmentBox[boxType].price * qty;
+            if (user.points < cost) return reply(`❌ 자금 부족 (필요: ${formatKRW(cost)})`);
+            user.points -= cost;
+            user.boxes[boxType] = (user.boxes[boxType] || 0) + qty;
+            saveData(db);
+            return reply(`📦 [구매] ${boxType} x${qty}\n지출: -${formatKRW(cost)}\n보유: ${user.boxes[boxType]}개\n잔액: ${formatKRW(user.points)}\n\n!장비상자열기 ${boxType} ${qty} 로 개봉`);
+        }
+
+        if (cmd === '!장비상자열기') {
+            if (args.length < 1) return reply('❌ !장비상자열기 [종류] [수량(기본1)]');
+            const boxType = args[0];
+            const qty = parseInt(args[1] || '1', 10);
+            if (!CONFIG.equipmentBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
+            if (isNaN(qty) || qty < 1 || qty > 100) return reply('❌ 수량은 1~100');
+            if ((user.boxes[boxType] || 0) < qty) return reply(`❌ ${boxType} 부족 (보유: ${user.boxes[boxType] || 0}개)`);
+
+            user.boxes[boxType] -= qty;
+            const results = [];
+            for (let i = 0; i < qty; i++) {
+                const item = rollEquipmentBox(boxType);
+                if (!item) continue;
+                user.equipmentInventory.push(item);
+                results.push(item);
+            }
+            saveData(db);
+
+            let m = `📦 [${boxType} 개봉] x${qty}\n─────────────────────\n`;
+            results.forEach(it => {
+                const slotLabel = it.slotType === 'weapon' ? '무기' : it.slotType === 'armor' ? '방어구' : it.slotType === 'shield' ? '방패' : '반지';
+                m += `${EQUIP_GRADE_EMOJI[it.grade]||''}[${it.grade}] ${it.name} (${slotLabel})\n`;
+            });
+            m += `─────────────────────\n!장비인벤 에서 확인 가능`;
+            return reply(m);
+        }
+
+        if (cmd === '!직원상자목록') {
+            let m = '📦 [직원상자 목록]\n─────────────────────\n';
+            for (const [type, cfg] of Object.entries(CONFIG.employeeBox)) {
+                const grade = type.replace('직원상자', '');
+                const name = Object.keys(PARTY_MEMBERS).find(n => PARTY_MEMBERS[n].grade === grade);
+                m += `${type} — ${formatKRW(cfg.price)} (${name})\n`;
+            }
+            m += '\n!직원상자구매 [종류] [수량]\n!직원상자열기 [종류] [수량]';
+            return reply(m);
+        }
+
+        if (cmd === '!직원상자구매') {
+            if (args.length < 1) return reply('❌ !직원상자구매 [종류] [수량(기본1)]\n(!직원상자목록 참고)');
+            const boxType = args[0];
+            const qty = parseInt(args[1] || '1', 10);
+            if (!CONFIG.employeeBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
+            if (isNaN(qty) || qty < 1 || qty > 100) return reply('❌ 수량은 1~100');
+            const cost = CONFIG.employeeBox[boxType].price * qty;
+            if (user.points < cost) return reply(`❌ 자금 부족 (필요: ${formatKRW(cost)})`);
+            user.points -= cost;
+            user.boxes[boxType] = (user.boxes[boxType] || 0) + qty;
+            saveData(db);
+            return reply(`📦 [구매] ${boxType} x${qty}\n지출: -${formatKRW(cost)}\n보유: ${user.boxes[boxType]}개\n잔액: ${formatKRW(user.points)}\n\n!직원상자열기 ${boxType} ${qty} 로 개봉`);
+        }
+
+        if (cmd === '!직원상자열기') {
+            if (args.length < 1) return reply('❌ !직원상자열기 [종류] [수량(기본1)]');
+            const boxType = args[0];
+            const qty = parseInt(args[1] || '1', 10);
+            if (!CONFIG.employeeBox[boxType]) return reply(`❌ 존재하지 않는 상자: ${boxType}`);
+            if (isNaN(qty) || qty < 1 || qty > 100) return reply('❌ 수량은 1~100');
+            if ((user.boxes[boxType] || 0) < qty) return reply(`❌ ${boxType} 부족 (보유: ${user.boxes[boxType] || 0}개)`);
+
+            const memberName = rollEmployeeBox(boxType);
+            if (!memberName) return reply('❌ 상자 오류: 해당 등급 파티원을 찾을 수 없습니다.');
+
+            user.boxes[boxType] -= qty;
+            if (!user.partyMembers[memberName]) user.partyMembers[memberName] = { count: 0, level: 0 };
+            user.partyMembers[memberName].count += qty;
+            promoteParty(user);
+            saveData(db);
+
+            const p = user.partyMembers[memberName];
+            return reply(`📦 [${boxType} 개봉] x${qty}\n─────────────────────\n${PARTY_MEMBERS[memberName].grade} ${memberName} x${qty} 획득!\n현재: +${p.level} / ${p.count}개 보유`);
+        }
+
         if (cmd === '!내스탯' || cmd === '!스탯') {
             promoteParty(user);
             saveData(db);
@@ -1451,12 +1897,15 @@ server.on('message', (msg, rinfo) => {
             msg += `🌌 소울: ${(user.souls||0).toLocaleString()}개\n`;
             msg += `━━━━━━━━━━━━━━━━━━━━\n`;
             const eq = user.equipment || {};
-            const slotName = { weapon:'🗡️ 무기', armor:'🛡️ 방어구', shield:'🔰 방패', ring1:'💍 반지1', ring2:'💍 반지2' };
             let hasEq = false;
             for (const slot of ['weapon','armor','shield','ring1','ring2']) {
-                if (eq[slot]) { hasEq = true; msg += `${slotName[slot]}: ${eq[slot].name || '이름없음'}\n`; }
+                if (eq[slot]) {
+                    hasEq = true;
+                    const it = eq[slot];
+                    msg += `${SLOT_LABEL[slot]}: ${EQUIP_GRADE_EMOJI[it.grade]||''}${it.name} +${it.enhanceLevel||0}\n`;
+                }
             }
-            if (!hasEq) msg += '(장비 없음 — Phase 2에서 구현)\n';
+            if (!hasEq) msg += '(장착한 장비 없음 — !장비상점 에서 구매해보세요)\n';
             msg += `━━━━━━━━━━━━━━━━━━━━\n`;
             if (user.activeParty && user.activeParty.length > 0) {
                 msg += `⚔️ 파티: ${user.activeParty.map(n => `${n} +${user.partyMembers[n].level}`).join(' / ')}`;
