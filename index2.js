@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3001;
+const PORT = 3000;
 const DATA_FILE = path.join(__dirname, 'users.json');
 const MARKET_FILE = path.join(__dirname, 'market.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -16,7 +16,7 @@ const server = dgram.createSocket('udp4');
 // 1. CONFIG 로드/저장
 // ═══════════════════════════════════════════════════════
 const DEFAULT_CONFIG = {
-    fees: { sutda: 5, blackjack: 3, baccarat: 5, numberGuess: 3, duel: 5 },
+    fees: { sutda: 10, blackjack: 5, baccarat: 8, numberGuess: 5, duel: 8 },
     sutda: { dealerDieMaxChance: 15 },
     gacha: {
         초급상자: { price: 100000, rates: { 일반: 75, 희귀: 20, 영웅: 4, 전설: 1, 신화: 0, 꽝: 0 } },
@@ -27,7 +27,7 @@ const DEFAULT_CONFIG = {
         신화상자: { price: 10000000000, rates: { 일반: 0, 희귀: 0, 영웅: 5, 전설: 35, 신화: 60, 꽝: 0 } }
     },
     coin: { updateIntervalMinutes: 10, maxChangePercent: 40 },
-    loan: { maxRatio: 0.5, hourlyInterestRate: 3 },
+    loan: { maxRatio: 0.5, hourlyInterestRate: 5 },
     employee: { taxRate: 20 },
     newsAdmins: ['A', '박성빈'],
     quiz: {
@@ -144,16 +144,45 @@ const DEFAULT_COIN = {
     '첨지코인': { currentPrice: 1000, lastPrice: 1000, desc: '큰손이 움직이는 코인' }
 };
 
-const EMPLOYEE_SHOP = {
-    '박장호':   { hirePrice: 500  * MAN,          perMinute: 3000,     desc: '평범한 알바생' },
-    '박성빈':   { hirePrice: 2000 * MAN,           perMinute: 10000,    desc: '성실한 직원' },
-    '몰탈':     { hirePrice: 5000 * MAN,           perMinute: 25000,    desc: '눈빛이 매서운 신입' },
-    '임정재':   { hirePrice: Math.round(1 * EOK),  perMinute: 50000,    desc: '능력있는 매니저' },
-    '조호근':   { hirePrice: Math.round(3 * EOK),  perMinute: 150000,   desc: '베테랑 임원' },
-    '펭즈':     { hirePrice: Math.round(10 * EOK), perMinute: 500000,   desc: '의문의 거상' },
-    '워렌버핏': { hirePrice: Math.round(50 * EOK), perMinute: 2000000,  desc: '투자의 귀재' },
-    '첨지':     { hirePrice: Math.round(100 * EOK),perMinute: 4000000,  desc: '소문 속의 큰손' },
-    '일론머스크':{ hirePrice: Math.round(300 * EOK),perMinute: 10000000, desc: '괴짜 천재 사업가' }
+// ─────────────────────────────────────────────
+// 파티원(직원) 시스템 — RPG 컨셉으로 완전 재설계
+// 등급별 캐릭터 라인업, 각자 고유 스킬 보유
+// ─────────────────────────────────────────────
+const PARTY_MEMBERS = {
+    '김판돌':       { grade: '초급', baseSkillPower: 5,   skill: 'atkBuff',   skillDesc: '20% 확률 발동 - 다음 공격 데미지 +20%' },
+    '나칼치':       { grade: '중급', baseSkillPower: 10,  skill: 'defBuff',   skillDesc: '20% 확률 발동 - 이번 턴 받는 데미지 -30%' },
+    '도끼눈 최씨':  { grade: '고급', baseSkillPower: 20,  skill: 'heal',      skillDesc: '25% 확률 발동 - HP 15% 회복' },
+    '흑룡 강':      { grade: '영웅', baseSkillPower: 40,  skill: 'critUp',    skillDesc: '25% 확률 발동 - 다음 공격 크리티컬 100%' },
+    '백호 백작':    { grade: '전설', baseSkillPower: 80,  skill: 'pierce',    skillDesc: '30% 확률 발동 - 다음 공격 방어무시(관통)' },
+    '무당벌레':     { grade: '신화', baseSkillPower: 150, skill: 'doubleAtk', skillDesc: '30% 확률 발동 - 이번 턴 2회 공격' },
+    '검은 지배자':  { grade: '태초', baseSkillPower: 300, skill: 'ultimate',  skillDesc: '35% 확률 발동 - 강력한 진명해방 (관통+2회공격+회복)' }
+};
+
+// 공백 있는 파티원 이름을 args 배열에서 매칭
+// 예: args = ['A', '검은', '지배자', '3'] → { name: '검은 지배자', restArgs: ['3'] }
+function matchPartyMemberFromArgs(args, startIdx) {
+    const memberNames = Object.keys(PARTY_MEMBERS);
+    // 긴 이름부터 매칭 시도 (2단어 이름 우선)
+    const sorted = memberNames.sort((a, b) => b.split(' ').length - a.split(' ').length);
+    for (const name of sorted) {
+        const parts = name.split(' ');
+        const slice = args.slice(startIdx, startIdx + parts.length).join(' ');
+        if (slice === name) {
+            return { name, nextIdx: startIdx + parts.length };
+        }
+    }
+    return null;
+}
+
+// 파티원 스킬 이름 로그용
+const PARTY_SKILL_MESSAGES = {
+    atkBuff:   (n) => `⚡ ${n}이(가) 나타나 공격력을 끌어올립니다!`,
+    defBuff:   (n) => `🛡️ ${n}이(가) 방벽을 세워 피해를 줄입니다!`,
+    heal:      (n) => `💚 ${n}이(가) 상처를 치유합니다!`,
+    critUp:    (n) => `🎯 ${n}이(가) 급소를 노립니다! 크리티컬 확정!`,
+    pierce:    (n) => `🗡️ ${n}이(가) 방어를 꿰뚫는 일격을 준비합니다!`,
+    doubleAtk: (n) => `⚡⚡ ${n}이(가) 잔영을 만들며 연격을 시전합니다!`,
+    ultimate:  (n) => `🌌 ${n}이(가) 진명해방! 세계가 무너집니다!`
 };
 
 // 가챠 아이템 풀 (등급별)
@@ -295,6 +324,66 @@ const ACHIEVEMENTS = {
     ]
 };
 
+// ─────────────────────────────────────────────
+// 특수 타이틀 (RPG 진행/컬렉션/부/전설 계열)
+// !내정보에서 최고 등급 5개까지 함께 표시
+// 각 함수는 user 객체 받아 조건 만족 시 타이틀 문자열 반환, 아니면 null
+// ─────────────────────────────────────────────
+const SPECIAL_TITLES = [
+    // 최종보스 (최고 우선순위)
+    { id: 'finalBoss', priority: 100, check: (u) => (u.bossKills && u.bossKills['혼돈의 지배자'] > 0) ? '🌟👑💫[혼돈을 정복한 자]💫👑🌟' : null },
+    
+    // RPG 진행 계열
+    { id: 'boss10',   priority: 90, check: (u) => (u.bossKills && Object.keys(u.bossKills).length >= 10) ? '👑⚔️[대륙의 영웅]' : null },
+    { id: 'boss5',    priority: 80, check: (u) => (u.bossKills && Object.keys(u.bossKills).length >= 5) ? '🛡️⚔️[정예 모험가]' : null },
+    { id: 'boss1',    priority: 60, check: (u) => (u.bossKills && Object.keys(u.bossKills).length >= 1) ? '⚔️[모험가]' : null },
+    
+    // 사냥 계열
+    { id: 'hunt1000', priority: 75, check: (u) => (u.huntWins || 0) >= 1000 ? '🎯🏹[사냥의 달인]' : null },
+    { id: 'hunt100',  priority: 55, check: (u) => (u.huntWins || 0) >= 100 ? '🏹[숙련된 사냥꾼]' : null },
+    { id: 'hunt1',    priority: 35, check: (u) => (u.huntWins || 0) >= 1 ? '🌱[초보 사냥꾼]' : null },
+    
+    // 컬렉션 계열
+    { id: 'primordial', priority: 85, check: (u) => {
+        for (const [n, p] of Object.entries(u.partyMembers || {})) {
+            if (PARTY_MEMBERS[n]?.grade === '태초' && ((p.count||0) + (p.level||0) > 0)) return '✨[태초의 목격자]';
+        }
+        return null;
+    }},
+    { id: 'collector', priority: 65, check: (u) => {
+        const grades = new Set();
+        for (const [n, p] of Object.entries(u.partyMembers || {})) {
+            if ((p.count||0) + (p.level||0) > 0 && PARTY_MEMBERS[n]) grades.add(PARTY_MEMBERS[n].grade);
+        }
+        return grades.size >= 7 ? '🎭[모든 등급 수집가]' : null;
+    }},
+    
+    // 부의 상징
+    { id: 'ultraRich', priority: 95, check: (u) => {
+        const nw = calcNetWorth(u);
+        return nw.total >= 10000000000000000 ? '💰💰💰[경제 지배자]' : null; // 1경
+    }},
+    { id: 'megaRich', priority: 70, check: (u) => {
+        const nw = calcNetWorth(u);
+        return nw.total >= 100000000000000 ? '💰💰[초대형 재벌]' : null; // 100조
+    }},
+    { id: 'rich', priority: 50, check: (u) => {
+        const nw = calcNetWorth(u);
+        return nw.total >= 1000000000000 ? '💰[재벌]' : null; // 1조
+    }},
+];
+
+// 유저가 획득한 특수 타이틀 목록 (우선순위 정렬)
+function getEarnedTitles(user) {
+    const earned = [];
+    for (const t of SPECIAL_TITLES) {
+        const title = t.check(user);
+        if (title) earned.push({ id: t.id, priority: t.priority, title });
+    }
+    earned.sort((a, b) => b.priority - a.priority);
+    return earned;
+}
+
 // ═══════════════════════════════════════════════════════
 // 3. 런타임 상태
 // ═══════════════════════════════════════════════════════
@@ -367,16 +456,29 @@ function saveMarket() {
 // ═══════════════════════════════════════════════════════
 function createDefaultUser() {
     return {
-        points: 2000,
+        points: 2000,        // 골드 (기존 points 유지)
+        stones: 0,           // 강화석 (사냥터에서만 획득)
+        souls: 0,            // 소울 (8단계 이상 레이드 확률 획득)
         lastCheckIn: '',
         items: [],
         luxuries: {},
         coins: {},
-        employees: {},
         gachaItems: [],
         boxes: {},
         loan: { amount: 0, takenAt: 0 },
         seized: false,
+        // === RPG ===
+        partyMembers: {},    // { '김판돌': { count: N, level: N } } — 10명 모으면 +1강화
+        activeParty: [],     // 편성된 파티원 이름 배열 (최대 3)
+        equipment: { weapon: null, armor: null, shield: null, ring1: null, ring2: null },
+        skills: [],          // 학습한 스킬 목록
+        huntCount: 0,        // 사냥 횟수
+        huntWins: 0,         // 사냥 성공
+        bossKills: {},       // { '킹슬라임': N, ... } 보스별 처치 횟수
+        firstBossClears: {}, // 최초 클리어 기록
+        lastHuntAt: 0,       // 마지막 사냥 시각 (쿨타임)
+        lastRaidAt: 0,       // 마지막 레이드 시각
+        // === 통계 ===
         stats: {
             sutda:       { wins: 0, losses: 0, draws: 0 },
             blackjack:   { wins: 0, losses: 0 },
@@ -407,12 +509,44 @@ function ensureUser(db, name) {
     if (!Array.isArray(u.items)) u.items = [];
     if (!u.luxuries || typeof u.luxuries !== 'object') u.luxuries = {};
     if (!u.coins || typeof u.coins !== 'object') u.coins = {};
-    if (!u.employees || typeof u.employees !== 'object') u.employees = {};
+    // 기존 employees 필드는 삭제 (RPG 개편으로 제거됨)
+    if (u.employees) delete u.employees;
     if (!Array.isArray(u.gachaItems)) u.gachaItems = [];
     if (!u.boxes || typeof u.boxes !== 'object') u.boxes = {};
     if (!u.loan || typeof u.loan !== 'object') u.loan = { amount: 0, takenAt: 0 };
     if (typeof u.seized !== 'boolean') u.seized = false;
     if (!u.stats || typeof u.stats !== 'object') u.stats = createDefaultUser().stats;
+    // === RPG 필드 정규화 ===
+    if (typeof u.stones !== 'number' || isNaN(u.stones)) u.stones = 0;
+    if (typeof u.souls !== 'number' || isNaN(u.souls)) u.souls = 0;
+    if (!u.partyMembers || typeof u.partyMembers !== 'object') u.partyMembers = {};
+    if (!Array.isArray(u.activeParty)) u.activeParty = [];
+    if (!u.equipment || typeof u.equipment !== 'object') u.equipment = { weapon: null, armor: null, shield: null, ring1: null, ring2: null };
+    else {
+        for (const slot of ['weapon','armor','shield','ring1','ring2']) {
+            if (!(slot in u.equipment)) u.equipment[slot] = null;
+        }
+    }
+    if (!Array.isArray(u.skills)) u.skills = [];
+    if (typeof u.huntCount !== 'number' || isNaN(u.huntCount)) u.huntCount = 0;
+    if (typeof u.huntWins !== 'number' || isNaN(u.huntWins)) u.huntWins = 0;
+    if (!u.bossKills || typeof u.bossKills !== 'object') u.bossKills = {};
+    if (!u.firstBossClears || typeof u.firstBossClears !== 'object') u.firstBossClears = {};
+    if (typeof u.lastHuntAt !== 'number') u.lastHuntAt = 0;
+    if (typeof u.lastRaidAt !== 'number') u.lastRaidAt = 0;
+    // 파티원 데이터 정규화
+    for (const k of Object.keys(u.partyMembers)) {
+        const v = u.partyMembers[k];
+        if (typeof v === 'number') u.partyMembers[k] = { count: v, level: 0 };
+        else if (v && typeof v === 'object') {
+            u.partyMembers[k] = {
+                count: (typeof v.count === 'number' && !isNaN(v.count)) ? v.count : 0,
+                level: (typeof v.level === 'number' && !isNaN(v.level)) ? v.level : 0
+            };
+        } else {
+            u.partyMembers[k] = { count: 0, level: 0 };
+        }
+    }
     for (const game of ['sutda','blackjack','baccarat','numberGuess','duel']) {
         if (!u.stats[game]) u.stats[game] = { wins: 0, losses: 0, draws: 0 };
     }
@@ -520,6 +654,69 @@ function sumItemEffect(user, type) {
     return user.gachaItems.filter(it => it.type === type).reduce((s, it) => s + (it.value || 0), 0);
 }
 
+// ─────────────────────────────────────────────
+// RPG 헬퍼 함수들
+// ─────────────────────────────────────────────
+
+// 파티원 강화 자동 처리 (10명 모이면 +1강화, count를 10 소모)
+function promoteParty(user) {
+    for (const name of Object.keys(user.partyMembers)) {
+        const p = user.partyMembers[name];
+        while (p.count >= 10) {
+            p.count -= 10;
+            p.level += 1;
+        }
+    }
+}
+
+// 파티원 전투 스탯 계산 (강화 레벨 반영)
+// 레벨당 스킬 파워 +25%, 기본 공격력 기여도 별도
+function calcPartyMemberPower(name, level) {
+    const base = PARTY_MEMBERS[name];
+    if (!base) return { skillPower: 0, atkContrib: 0 };
+    const mult = 1 + (level * 0.25);
+    return {
+        skillPower: Math.floor(base.baseSkillPower * mult),
+        atkContrib: Math.floor(base.baseSkillPower * mult * 0.5) // 편성만 해도 공격력 소량 기여
+    };
+}
+
+// 장비 스탯 계산 (아직 장비 시스템 미구현 — Phase 2에서 정의됨. 여기선 null-safe)
+function calcEquipmentStat(equipment) {
+    let atk = 0, def = 0, hp = 0;
+    if (!equipment) return { atk, def, hp };
+    for (const slot of Object.keys(equipment)) {
+        const eq = equipment[slot];
+        if (!eq) continue;
+        atk += eq.atk || 0;
+        def += eq.def || 0;
+        hp  += eq.hp  || 0;
+    }
+    return { atk, def, hp };
+}
+
+// 캐릭터 총 스탯 계산 (기본 + 장비 + 파티 기여)
+function calcCharacterStat(user) {
+    const BASE_ATK = 10;
+    const BASE_DEF = 5;
+    const BASE_HP  = 100;
+
+    const eq = calcEquipmentStat(user.equipment);
+    let atk = BASE_ATK + eq.atk;
+    let def = BASE_DEF + eq.def;
+    let hp  = BASE_HP  + eq.hp;
+
+    // 파티원 편성 기여
+    for (const name of (user.activeParty || [])) {
+        const p = user.partyMembers[name];
+        if (!p) continue;
+        const power = calcPartyMemberPower(name, p.level);
+        atk += power.atkContrib;
+    }
+
+    return { atk, def, hp, maxHp: hp };
+}
+
 // 총자산 계산
 function calcNetWorth(user) {
     let luxuryValue = 0;
@@ -532,24 +729,14 @@ function calcNetWorth(user) {
         const count = h.count || 0;
         if (count > 0 && COIN_MARKET[name]) coinValue += COIN_MARKET[name].currentPrice * count;
     }
-    let empEarning = 0;
-    const now = Date.now();
-    for (const [name, info] of Object.entries(user.employees || {})) {
-        const emp = EMPLOYEE_SHOP[name];
-        if (emp && info && typeof info.hiredAt === 'number') {
-            const rawEarning = Math.floor((now - info.hiredAt) / 60000) * emp.perMinute;
-            const taxRate = CONFIG.employee.taxRate / 100;
-            empEarning += Math.floor(rawEarning * (1 - taxRate));
-        }
-    }
     const debt = calcLoanDebt(user.loan);
     return {
         cash: user.points,
         luxuryValue,
         coinValue,
-        empEarning,
+        empEarning: 0, // 레거시 필드 유지 (다른 곳 참조 대비)
         debt,
-        total: user.points + luxuryValue + coinValue + empEarning - debt
+        total: user.points + luxuryValue + coinValue - debt
     };
 }
 
@@ -594,24 +781,10 @@ function resolveLuxuryName(arg) {
     return LUXURY_MARKET[arg] ? arg : null;
 }
 
-function getEmployeeList() { return Object.entries(EMPLOYEE_SHOP); }
-function resolveEmployeeName(arg) {
-    const list = getEmployeeList();
-    if (/^\d+$/.test(arg)) {
-        const idx = parseInt(arg, 10) - 1;
-        return (idx >= 0 && idx < list.length) ? list[idx][0] : null;
-    }
-    return EMPLOYEE_SHOP[arg] ? arg : null;
-}
+// getEmployeeList: 레거시 제거됨 (직원 시스템 폐지)
+// resolveEmployeeName: 레거시 제거됨
 
-function resolveOwnedEmployee(user, arg) {
-    const owned = Object.keys(user.employees || {});
-    if (/^\d+$/.test(arg)) {
-        const idx = parseInt(arg, 10) - 1;
-        return (idx >= 0 && idx < owned.length) ? owned[idx] : null;
-    }
-    return owned.includes(arg) ? arg : null;
-}
+// resolveOwnedEmployee: 레거시 제거됨
 
 function formatChangeRate(avgPrice, currentPrice) {
     if (!avgPrice || avgPrice <= 0) return '';
@@ -855,12 +1028,7 @@ function seizeAssets(db, name) {
         }
     }
 
-    // 직원 해고 (퇴직금 10%만)
-    for (const [n] of Object.entries(user.employees)) {
-        const emp = EMPLOYEE_SHOP[n];
-        if (emp) user.points += Math.floor(emp.hirePrice*0.1);
-    }
-    user.employees = {};
+    // 직원 해고: RPG 개편으로 시스템 제거됨 (파티원은 압류 시 유지)
 
     // 빚 상환 후 마이너스 처리
     user.points -= debt;
@@ -1009,6 +1177,46 @@ server.on('message', (msg, rinfo) => {
             return reply(`🛡️ [초기화 완료] ${args[0]}`);
         }
 
+        if (cmd === '!관리자파티지급') {
+            if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
+            if (args.length < 2) return reply('❌ !관리자파티지급 [닉네임] [파티원이름] [수량(기본1)]\n예: !관리자파티지급 홍길동 김판돌 10\n예2: !관리자파티지급 홍길동 검은 지배자 1');
+            const target = ensureUser(db, args[0]);
+            const matched = matchPartyMemberFromArgs(args, 1);
+            if (!matched) return reply(`❌ 존재하지 않는 파티원입니다.\n(가능: ${Object.keys(PARTY_MEMBERS).join(', ')})`);
+            const memberName = matched.name;
+            const qty = parseInt(args[matched.nextIdx] || '1', 10);
+            if (isNaN(qty) || qty < 1) return reply('❌ 수량 오류');
+            if (!target.partyMembers[memberName]) target.partyMembers[memberName] = { count: 0, level: 0 };
+            target.partyMembers[memberName].count += qty;
+            promoteParty(target);
+            saveData(db);
+            return reply(`🛡️ [파티원 지급] ${args[0]}에게 ${memberName} x${qty} 지급\n현재: +${target.partyMembers[memberName].level} / ${target.partyMembers[memberName].count}개 보유`);
+        }
+
+        if (cmd === '!관리자강화석지급') {
+            if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
+            if (args.length < 2) return reply('❌ !관리자강화석지급 [닉네임] [수량]');
+            const target = ensureUser(db, args[0]);
+            const qty = parseInt(args[1], 10);
+            if (isNaN(qty)) return reply('❌ 수량 오류');
+            target.stones = (target.stones || 0) + qty;
+            if (target.stones < 0) target.stones = 0;
+            saveData(db);
+            return reply(`🛡️ [강화석 지급] ${args[0]}: ${qty>=0?'+':''}${qty}\n현재: ${target.stones.toLocaleString()}개`);
+        }
+
+        if (cmd === '!관리자소울지급') {
+            if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
+            if (args.length < 2) return reply('❌ !관리자소울지급 [닉네임] [수량]');
+            const target = ensureUser(db, args[0]);
+            const qty = parseInt(args[1], 10);
+            if (isNaN(qty)) return reply('❌ 수량 오류');
+            target.souls = (target.souls || 0) + qty;
+            if (target.souls < 0) target.souls = 0;
+            saveData(db);
+            return reply(`🛡️ [소울 지급] ${args[0]}: ${qty>=0?'+':''}${qty}\n현재: ${target.souls.toLocaleString()}개`);
+        }
+
         if (cmd === '!관리자아이템지급') {
             if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
             // !관리자아이템지급 [닉네임] [아이템타입] [수량]
@@ -1077,7 +1285,6 @@ server.on('message', (msg, rinfo) => {
                 ' !내아이템 — 보유 아이템\n' +
                 ' !내코인 — 코인 현황\n' +
                 ' !내사치품 — 명품·차량 현황\n' +
-                ' !내직원 — 직원 현황\n' +
                 ' !랭킹 — 자산 순위\n\n' +
                 '🎰 [게임]\n' +
                 ' !섯다 [금액] — 섯다 시작\n' +
@@ -1100,12 +1307,11 @@ server.on('message', (msg, rinfo) => {
                 ' !구매 [번호or이름] — 사치품 구매\n' +
                 ' !판매 [번호or이름] — 사치품 판매\n' +
                 ' !모두팔기 — 전체 사치품 매각\n\n' +
-                '👔 [직원]\n' +
-                ' !직원목록 — 채용 가능 직원\n' +
-                ' !직원채용 [번호or이름]\n' +
-                ' !직원수익 — 미정산 수익 확인\n' +
-                ' !직원출금 — 수익 정산\n' +
-                ' !직원해고 [번호or이름]\n\n' +
+                '⚔️ [RPG - Phase 1]\n' +
+                ' !내스탯 — 캐릭터 스탯 확인\n' +
+                ' !파티 — 편성된 파티 확인\n' +
+                ' !파티원 — 보유 파티원 목록\n' +
+                ' !파티편성 [이름] [이름] [이름] — 파티 편성 (최대 3명)\n\n' +
                 '🏦 [은행]\n' +
                 ' !대출 [금액] — 대출 (자산 50% 한도)\n' +
                 ' !상환 [금액or전액] — 대출 상환\n' +
@@ -1132,26 +1338,70 @@ server.on('message', (msg, rinfo) => {
         // 내 정보 (분리된 명령어)
         // ══════════════════════════════════════════════
         if (cmd === '!내정보') {
+            promoteParty(user);
+            saveData(db);
             const nw = calcNetWorth(user);
-            const achLines = [];
-            for (const [game, levels] of Object.entries(ACHIEVEMENTS)) {
-                const lvl = getAchievementLevel(user, game);
-                if (lvl) achLines.push(`${lvl.title}`);
-            }
-            const title = displayName(user, sender);
+            const stat = calcCharacterStat(user);
             const debt = calcLoanDebt(user.loan);
-            return reply(
-                `${title}\n` +
-                `━━━━━━━━━━━━━━━━━━━━\n` +
-                `💰 현금: ${formatKRW(user.points)}\n` +
-                `📊 명품가치: ${formatKRW(nw.luxuryValue)}\n` +
-                `🪙 코인가치: ${formatKRW(nw.coinValue)}\n` +
-                `👔 미정산수익: ${formatKRW(nw.empEarning)}\n` +
-                (debt>0 ? `🏦 대출잔액: -${formatKRW(debt)}\n` : '') +
-                `━━━━━━━━━━━━━━━━━━━━\n` +
-                `💎 총자산: ${formatKRW(nw.total)}\n` +
-                (achLines.length>0 ? `🏆 업적: ${achLines.join(' / ')}` : '')
-            );
+            
+            // 게임별 업적 타이틀
+            const gameAchievements = [];
+            for (const [game] of Object.entries(ACHIEVEMENTS)) {
+                const lvl = getAchievementLevel(user, game);
+                if (lvl) gameAchievements.push(lvl.title);
+            }
+            
+            // 특수 타이틀 (RPG/컬렉션/부)
+            const specialTitles = getEarnedTitles(user);
+            const topTitle = specialTitles[0]?.title || displayName(user, sender);
+            const otherTitles = specialTitles.slice(1, 5).map(t => t.title);
+            
+            let msg = `${topTitle}
+`;
+            if (otherTitles.length > 0) msg += `${otherTitles.join(' ')}
+`;
+            if (gameAchievements.length > 0) msg += `${gameAchievements.slice(0,3).join(' / ')}
+`;
+            msg += `━━━━━━━━━━━━━━━━━━━━
+`;
+            msg += `💰 골드: ${formatKRW(user.points)}
+`;
+            msg += `💎 강화석: ${(user.stones||0).toLocaleString()}개
+`;
+            msg += `🌌 소울: ${(user.souls||0).toLocaleString()}개
+`;
+            msg += `━━━━━━━━━━━━━━━━━━━━
+`;
+            msg += `⚔️ 공격력: ${stat.atk.toLocaleString()}
+`;
+            msg += `🛡️ 방어력: ${stat.def.toLocaleString()}
+`;
+            msg += `❤️ HP: ${stat.maxHp.toLocaleString()}
+`;
+            msg += `━━━━━━━━━━━━━━━━━━━━
+`;
+            msg += `📊 명품가치: ${formatKRW(nw.luxuryValue)}
+`;
+            msg += `🪙 코인가치: ${formatKRW(nw.coinValue)}
+`;
+            if (debt > 0) msg += `🏦 대출채무: -${formatKRW(debt)}
+`;
+            msg += `💎 총자산: ${formatKRW(nw.total)}
+`;
+            // 진행 상황 요약
+            const bossCount = Object.keys(user.bossKills || {}).length;
+            const partyCount = user.activeParty ? user.activeParty.length : 0;
+            if (bossCount > 0 || user.huntWins > 0 || partyCount > 0) {
+                msg += `━━━━━━━━━━━━━━━━━━━━
+`;
+                if (partyCount > 0) msg += `⚔️ 파티: ${user.activeParty.map(n => `${n} +${user.partyMembers[n].level}`).join(' / ')}
+`;
+                if (bossCount > 0) msg += `🏆 클리어 보스: ${bossCount}종
+`;
+                if (user.huntWins > 0) msg += `🏹 사냥 성공: ${user.huntWins}회
+`;
+            }
+            return reply(msg);
         }
 
         if (cmd === '!내아이템') {
@@ -1199,22 +1449,104 @@ server.on('message', (msg, rinfo) => {
         }
 
         if (cmd === '!내직원') {
-            const empNames = Object.keys(user.employees||{});
-            if (empNames.length===0) return reply('❌ 고용된 직원이 없습니다. !직원목록 으로 확인해보세요.');
-            const now=Date.now();
-            const taxRate=CONFIG.employee.taxRate/100;
-            let msg=`👔 [${sender}님의 직원 현황]\n─────────────────────\n`;
-            let total=0;
-            empNames.forEach((name,i)=>{
-                const emp=EMPLOYEE_SHOP[name], info=user.employees[name];
-                if (!emp||!info) return;
-                const rawEarn=Math.floor((now-info.hiredAt)/60000)*emp.perMinute;
-                const netEarn=Math.floor(rawEarn*(1-taxRate));
-                const mins=Math.floor((now-info.hiredAt)/60000);
-                total+=netEarn;
-                msg+=`${i+1}. ${name} — 근무 ${mins}분\n   미정산 +${formatKRW(netEarn)} (세후, 세율 ${CONFIG.employee.taxRate}%)\n`;
-            });
-            msg+=`─────────────────────\n총 미정산: ${formatKRW(total)}\n!직원출금 으로 수령`;
+            return reply('⚠️ 직원 시스템은 RPG 개편으로 제거되었습니다.\n대신 !파티원, !파티 를 사용해주세요.');
+        }
+
+        // ══════════════════════════════════════════════
+        // RPG - 파티 시스템
+        // ══════════════════════════════════════════════
+        if (cmd === '!파티원') {
+            promoteParty(user);
+            saveData(db);
+            const owned = Object.entries(user.partyMembers || {}).filter(([,p]) => (p.count||0) > 0 || (p.level||0) > 0);
+            if (owned.length === 0) {
+                return reply('❌ 보유 파티원이 없습니다.\n직원상자에서 뽑아보세요! (Phase 2에서 구현 예정)');
+            }
+            let msg = `👥 [${sender}님의 파티원]\n─────────────────────\n`;
+            owned.sort((a,b) => (b[1].level - a[1].level) || (b[1].count - a[1].count));
+            for (const [name, p] of owned) {
+                const info = PARTY_MEMBERS[name];
+                if (!info) continue;
+                const power = calcPartyMemberPower(name, p.level);
+                const active = user.activeParty.includes(name) ? ' 🟢편성중' : '';
+                msg += `[${info.grade}] ${name} +${p.level}${active}\n`;
+                msg += `   보유: ${p.count}개 (10개 시 +1강화)\n`;
+                msg += `   스킬 파워: ${power.skillPower} / ${info.skillDesc}\n`;
+            }
+            msg += `─────────────────────\n!파티편성 [이름1] [이름2] [이름3] 으로 최대 3명 편성`;
+            return reply(msg);
+        }
+
+        if (cmd === '!파티') {
+            if (!user.activeParty || user.activeParty.length === 0) {
+                return reply('❌ 편성된 파티원이 없습니다.\n!파티편성 [이름1] [이름2] [이름3] 으로 편성해주세요.');
+            }
+            let msg = `⚔️ [${sender}님의 파티 편성]\n─────────────────────\n`;
+            for (const name of user.activeParty) {
+                const p = user.partyMembers[name];
+                const info = PARTY_MEMBERS[name];
+                if (!p || !info) continue;
+                const power = calcPartyMemberPower(name, p.level);
+                msg += `[${info.grade}] ${name} +${p.level}\n`;
+                msg += `   스킬 파워: ${power.skillPower}\n`;
+                msg += `   ${info.skillDesc}\n`;
+            }
+            return reply(msg);
+        }
+
+        if (cmd === '!파티편성') {
+            if (args.length < 1) return reply('❌ !파티편성 [이름1] [이름2] [이름3]\n(1~3명 지정, 공백 구분. 이름에 공백 있는 파티원도 인식됨)');
+            // 스마트 파싱: args에서 순차적으로 파티원 이름 매칭
+            const chosen = [];
+            let idx = 0;
+            while (idx < args.length && chosen.length < 3) {
+                const matched = matchPartyMemberFromArgs(args, idx);
+                if (!matched) return reply(`❌ "${args[idx]}" 부터 유효한 파티원 이름이 아닙니다.`);
+                const name = matched.name;
+                const p = user.partyMembers[name];
+                if (!p || (p.count <= 0 && p.level <= 0)) return reply(`❌ "${name}" 를 보유하고 있지 않습니다.`);
+                if (chosen.includes(name)) return reply(`❌ "${name}" 를 중복 편성했습니다.`);
+                chosen.push(name);
+                idx = matched.nextIdx;
+            }
+            if (idx < args.length) return reply(`❌ 파티는 최대 3명입니다. 남은 인자: ${args.slice(idx).join(' ')}`);
+            user.activeParty = chosen;
+            saveData(db);
+            return reply(`✅ [파티 편성 완료]\n${chosen.map(n => `⚔️ ${n} +${user.partyMembers[n].level}`).join('\n')}`);
+        }
+
+        if (cmd === '!파티해제') {
+            user.activeParty = [];
+            saveData(db);
+            return reply('✅ 파티 편성이 해제되었습니다.');
+        }
+
+        if (cmd === '!내스탯' || cmd === '!스탯') {
+            promoteParty(user);
+            saveData(db);
+            const stat = calcCharacterStat(user);
+            let msg = `⚔️ [${sender}님의 캐릭터 스탯]\n━━━━━━━━━━━━━━━━━━━━\n`;
+            msg += `❤️ HP: ${stat.maxHp.toLocaleString()}\n`;
+            msg += `🗡️ 공격력: ${stat.atk.toLocaleString()}\n`;
+            msg += `🛡️ 방어력: ${stat.def.toLocaleString()}\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+            msg += `💰 골드: ${formatKRW(user.points)}\n`;
+            msg += `💎 강화석: ${(user.stones||0).toLocaleString()}개\n`;
+            msg += `🌌 소울: ${(user.souls||0).toLocaleString()}개\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+            const eq = user.equipment || {};
+            const slotName = { weapon:'🗡️ 무기', armor:'🛡️ 방어구', shield:'🔰 방패', ring1:'💍 반지1', ring2:'💍 반지2' };
+            let hasEq = false;
+            for (const slot of ['weapon','armor','shield','ring1','ring2']) {
+                if (eq[slot]) { hasEq = true; msg += `${slotName[slot]}: ${eq[slot].name || '이름없음'}\n`; }
+            }
+            if (!hasEq) msg += '(장비 없음 — Phase 2에서 구현)\n';
+            msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+            if (user.activeParty && user.activeParty.length > 0) {
+                msg += `⚔️ 파티: ${user.activeParty.map(n => `${n} +${user.partyMembers[n].level}`).join(' / ')}`;
+            } else {
+                msg += `⚔️ 파티: 편성 없음 (!파티편성)`;
+            }
             return reply(msg);
         }
 
@@ -1377,82 +1709,6 @@ server.on('message', (msg, rinfo) => {
         // ══════════════════════════════════════════════
         // 직원 목록 / 채용 / 수익 / 해고
         // ══════════════════════════════════════════════
-        if (cmd === '!직원목록') {
-            let m = '👔 [채용 가능한 직원]\n─────────────────────\n';
-            getEmployeeList().forEach(([name, info], i) => {
-                m += `${i+1}. ${name} — 영입가 ${formatKRW(info.hirePrice)}\n   분당 ${formatKRW(info.perMinute)} (세율 ${CONFIG.employee.taxRate}%)\n   ㄴ ${info.desc}\n`;
-            });
-            m += '\n!직원채용 [번호or이름]';
-            return reply(m);
-        }
-
-        if (cmd === '!직원채용') {
-            if (args.length<1) return reply('❌ !직원채용 [번호or이름]');
-            const name = resolveEmployeeName(args[0]);
-            if (!name) return reply('❌ 존재하지 않는 직원');
-            if (user.employees[name]) return reply(`⚠️ ${name}님은 이미 채용 중`);
-            const emp = EMPLOYEE_SHOP[name];
-            if (user.points<emp.hirePrice) return reply(`❌ 자금 부족 (필요: ${formatKRW(emp.hirePrice)})`);
-            user.points -= emp.hirePrice;
-            user.employees[name] = {hiredAt: Date.now()};
-            saveData(db);
-            return reply(`👔 [채용] ${name}\n영입가: -${formatKRW(emp.hirePrice)}\n분당 수익: ${formatKRW(emp.perMinute)}\n잔액: ${formatKRW(user.points)}`);
-        }
-
-        if (cmd === '!직원수익') {
-            const empNames = Object.keys(user.employees||{});
-            if (empNames.length===0) return reply('❌ 고용된 직원이 없습니다.');
-            const now=Date.now();
-            const taxRate=CONFIG.employee.taxRate/100;
-            let m='👔 [미정산 수익]\n─────────────────────\n';
-            let total=0;
-            empNames.forEach((n,i)=>{
-                const emp=EMPLOYEE_SHOP[n], info=user.employees[n];
-                const raw=Math.floor((now-info.hiredAt)/60000)*emp.perMinute;
-                const net=Math.floor(raw*(1-taxRate));
-                total+=net;
-                m+=`${i+1}. ${n}: +${formatKRW(net)}\n`;
-            });
-            m+=`─────────────────────\n총: ${formatKRW(total)}`;
-            return reply(m);
-        }
-
-        if (cmd === '!직원출금') {
-            const empNames = Object.keys(user.employees||{});
-            if (empNames.length===0) return reply('❌ 고용된 직원이 없습니다.');
-            const now=Date.now();
-            const taxRate=CONFIG.employee.taxRate/100;
-            let total=0, detail='';
-            empNames.forEach(n=>{
-                const emp=EMPLOYEE_SHOP[n], info=user.employees[n];
-                const raw=Math.floor((now-info.hiredAt)/60000)*emp.perMinute;
-                const net=Math.floor(raw*(1-taxRate));
-                total+=net;
-                detail+=`➔ ${n}: +${formatKRW(net)}\n`;
-                user.employees[n].hiredAt = now;
-            });
-            if (total<=0) return reply('❌ 정산할 수익이 없습니다.');
-            user.points += total;
-            saveData(db);
-            return reply(`💵 [출금 완료]\n─────────────────────\n${detail}─────────────────────\n총 수령: +${formatKRW(total)}\n잔액: ${formatKRW(user.points)}`);
-        }
-
-        if (cmd === '!직원해고') {
-            if (args.length<1) return reply('❌ !직원해고 [번호or이름]');
-            const name = resolveOwnedEmployee(user, args[0]);
-            if (!name) return reply('❌ 보유하지 않은 직원');
-            const emp = EMPLOYEE_SHOP[name];
-            const info = user.employees[name];
-            const now = Date.now();
-            const raw = Math.floor((now-info.hiredAt)/60000)*emp.perMinute;
-            const netEarn = Math.floor(raw*(1-CONFIG.employee.taxRate/100));
-            const severance = Math.floor(emp.hirePrice*0.1); // 10% 지급
-            delete user.employees[name];
-            user.points += netEarn + severance;
-            saveData(db);
-            return reply(`👋 [해고 처리] ${name}\n미정산 수익: +${formatKRW(netEarn)}\n퇴직금: +${formatKRW(severance)} (영입가의 10%만 지급)\n잔액: ${formatKRW(user.points)}`);
-        }
-
         // ══════════════════════════════════════════════
         // 상자 시스템
         // ══════════════════════════════════════════════
@@ -1968,7 +2224,7 @@ server.on('message', (msg, rinfo) => {
             if (args.length<1) return reply('❌ !숫자맞추기 [개수(3~8)]');
             const n = parseInt(args[0], 10);
             if (isNaN(n)||n<3||n>8) return reply('❌ 개수는 3~8');
-            const mult = Math.round(n * 0.83 * 100) / 100;
+            const mult = Math.round(n * 0.65 * 100) / 100;
             numberGuessSessions[room] = { range: n, multiplier: mult, host: sender };
             return reply(`🔢 [숫자맞추기 개설]\n범위: 1~${n} / 배율: ${mult}배\n!숫자배팅 [금액] [숫자]`);
         }
