@@ -464,14 +464,14 @@ function calcHuntLoot(ground, elapsedMin, userPower) {
 const RAID_BOSSES = [
     {
         name: '킹 슬라임', grade: '초급', recommendedPower: 200, minPower: 60,
-        maxHp: 500, atk: 12, def: 3,
+        maxHp: 300, atk: 12, def: 3,
         gold: 5000, stones: 5, souls: 1,
         enrageHp: 0.3, enrageAtkMult: 1.8,
         desc: '거대한 젤리 덩어리. 작은 슬라임들을 흡수해 힘을 키웠다.'
     },
     {
         name: '숲의 수호자', grade: '중급', recommendedPower: 800, minPower: 300,
-        maxHp: 1500, atk: 30, def: 10,
+        maxHp: 1200, atk: 30, def: 10,
         gold: 20000, stones: 15, souls: 3,
         enrageHp: 0.3, enrageAtkMult: 2.0,
         desc: '고대 숲을 지키는 정령. 분노하면 자연의 힘을 해방한다.'
@@ -563,7 +563,7 @@ function getEquipmentEffectValue(user, effectId) {
 const BOSS_PATTERNS = [
     {
         id: 'crush',
-        announce: '💥 보스가 강력한 분쇄 공격을 준비합니다! (권장: !방어)',
+        announce: '💥 보스가 강력한 분쇄 공격을 준비합니다!',
         counter: '방어',
         wrongPenalty: 1.5, // 틀린 경우 보스 피해 x배
         counterBonus: 0.5, // 맞춘 경우 받는 피해 x배 (0.5 = 반감)
@@ -571,7 +571,7 @@ const BOSS_PATTERNS = [
     },
     {
         id: 'weak',
-        announce: '🎯 보스가 방어를 낮추고 노출됩니다! (권장: !강공)',
+        announce: '🎯 보스가 방어를 낮추고 노출됩니다!',
         counter: '강공',
         wrongPenalty: 1.0,
         counterBonus: 1.0,
@@ -579,7 +579,7 @@ const BOSS_PATTERNS = [
     },
     {
         id: 'heal',
-        announce: '💉 보스가 회복을 시도합니다! (권장: !방해)',
+        announce: '💉 보스가 회복을 시도합니다!',
         counter: '방해',
         wrongPenalty: 0, // 틀려도 패널티 없지만
         counterBonus: 1.0,
@@ -588,7 +588,7 @@ const BOSS_PATTERNS = [
     },
     {
         id: 'charge',
-        announce: '⚡ 보스가 돌진을 준비합니다! (권장: !회피)',
+        announce: '⚡ 보스가 돌진을 준비합니다!',
         counter: '회피',
         wrongPenalty: 2.0,
         counterBonus: 0.0, // 회피 성공 시 피해 0
