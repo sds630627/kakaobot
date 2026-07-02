@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+const PORT = 3001;
 const DATA_FILE = path.join(__dirname, 'users.json');
 const MARKET_FILE = path.join(__dirname, 'market.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -391,23 +391,25 @@ function calcCombatPower(stat) {
 // Phase 3: 사냥터
 // ─────────────────────────────────────────────
 const HUNTING_GROUNDS = [
-    { name: '뒷산',        grade: '초급', recommendedPower: 100,    goldMin: 500,     goldMax: 2000,     stoneMin: 1,   stoneMax: 3 },
-    { name: '어두운 숲',   grade: '중급', recommendedPower: 400,    goldMin: 2000,    goldMax: 8000,     stoneMin: 2,   stoneMax: 6 },
-    { name: '폐광',        grade: '고급', recommendedPower: 1500,   goldMin: 8000,    goldMax: 30000,    stoneMin: 5,   stoneMax: 15 },
-    { name: '얼음 동굴',   grade: '영웅', recommendedPower: 6000,   goldMin: 30000,   goldMax: 120000,   stoneMin: 12,  stoneMax: 35 },
-    { name: '용의 둥지',   grade: '전설', recommendedPower: 25000,  goldMin: 120000,  goldMax: 500000,   stoneMin: 30,  stoneMax: 90 },
-    { name: '천공의 섬',   grade: '신화', recommendedPower: 100000, goldMin: 500000,  goldMax: 2000000,  stoneMin: 80,  stoneMax: 250 },
-    { name: '혼돈의 균열', grade: '태초', recommendedPower: 500000, goldMin: 2000000, goldMax: 8000000,  stoneMin: 200, stoneMax: 600 }
+    { name: '뒷산',        grade: '초급', recommendedPower: 100,    minPower: 30,     goldMin: 500,     goldMax: 2000,     stoneMin: 1,   stoneMax: 3 },
+    { name: '어두운 숲',   grade: '중급', recommendedPower: 400,    minPower: 150,    goldMin: 2000,    goldMax: 8000,     stoneMin: 2,   stoneMax: 6 },
+    { name: '폐광',        grade: '고급', recommendedPower: 1500,   minPower: 600,    goldMin: 8000,    goldMax: 30000,    stoneMin: 5,   stoneMax: 15 },
+    { name: '얼음 동굴',   grade: '영웅', recommendedPower: 6000,   minPower: 2500,   goldMin: 30000,   goldMax: 120000,   stoneMin: 12,  stoneMax: 35 },
+    { name: '용의 둥지',   grade: '전설', recommendedPower: 25000,  minPower: 10000,  goldMin: 120000,  goldMax: 500000,   stoneMin: 30,  stoneMax: 90 },
+    { name: '천공의 섬',   grade: '신화', recommendedPower: 100000, minPower: 40000,  goldMin: 500000,  goldMax: 2000000,  stoneMin: 80,  stoneMax: 250 },
+    { name: '혼돈의 균열', grade: '태초', recommendedPower: 500000, minPower: 200000, goldMin: 2000000, goldMax: 8000000,  stoneMin: 200, stoneMax: 600 }
 ];
 
 function getHuntingGround(name) {
     return HUNTING_GROUNDS.find(h => h.name === name) || null;
 }
 
-function calcHuntSuccessRate(userPower, recommendedPower) {
-    const ratio = userPower / recommendedPower;
+// 전투력 미달 → 0%, 권장치 이상 → 최대 95%
+function calcHuntSuccessRate(userPower, ground) {
+    if (userPower < ground.minPower) return 0;
+    const ratio = userPower / ground.recommendedPower;
     const rate = 50 + (ratio - 1) * 50;
-    return Math.min(95, Math.max(5, Math.round(rate)));
+    return Math.min(95, Math.max(1, Math.round(rate)));
 }
 
 // 진행 중인 사냥 세션 (메모리)
@@ -461,50 +463,49 @@ function calcHuntLoot(ground, elapsedMin, userPower) {
 // ─────────────────────────────────────────────
 const RAID_BOSSES = [
     {
-        name: '킹 슬라임', grade: '초급', recommendedPower: 200,
+        name: '킹 슬라임', grade: '초급', recommendedPower: 200, minPower: 60,
         maxHp: 500, atk: 12, def: 3,
         gold: 5000, stones: 5, souls: 1,
-        enrageHp: 0.3, // HP 30% 이하에서 광폭화
-        enrageAtkMult: 1.8,
+        enrageHp: 0.3, enrageAtkMult: 1.8,
         desc: '거대한 젤리 덩어리. 작은 슬라임들을 흡수해 힘을 키웠다.'
     },
     {
-        name: '숲의 수호자', grade: '중급', recommendedPower: 800,
+        name: '숲의 수호자', grade: '중급', recommendedPower: 800, minPower: 300,
         maxHp: 1500, atk: 30, def: 10,
         gold: 20000, stones: 15, souls: 3,
         enrageHp: 0.3, enrageAtkMult: 2.0,
         desc: '고대 숲을 지키는 정령. 분노하면 자연의 힘을 해방한다.'
     },
     {
-        name: '철갑 골렘', grade: '고급', recommendedPower: 3000,
+        name: '철갑 골렘', grade: '고급', recommendedPower: 3000, minPower: 1200,
         maxHp: 5000, atk: 70, def: 30,
         gold: 80000, stones: 40, souls: 8,
         enrageHp: 0.25, enrageAtkMult: 2.2,
         desc: '폐광에서 발굴된 고대 전쟁 병기. 분노 시 핵심 코어가 폭발한다.'
     },
     {
-        name: '빙하 용', grade: '영웅', recommendedPower: 12000,
+        name: '빙하 용', grade: '영웅', recommendedPower: 12000, minPower: 5000,
         maxHp: 15000, atk: 180, def: 70,
         gold: 300000, stones: 100, souls: 20,
         enrageHp: 0.25, enrageAtkMult: 2.5,
         desc: '얼음 동굴의 지배자. 광폭화하면 절대영도 브레스를 쏟아낸다.'
     },
     {
-        name: '용암 군주', grade: '전설', recommendedPower: 50000,
+        name: '용암 군주', grade: '전설', recommendedPower: 50000, minPower: 20000,
         maxHp: 50000, atk: 500, def: 150,
         gold: 1000000, stones: 250, souls: 50,
         enrageHp: 0.3, enrageAtkMult: 2.5,
         desc: '용의 둥지 깊숙이 군림하는 불의 지배자.'
     },
     {
-        name: '천공의 군주', grade: '신화', recommendedPower: 200000,
+        name: '천공의 군주', grade: '신화', recommendedPower: 200000, minPower: 80000,
         maxHp: 200000, atk: 1500, def: 400,
         gold: 5000000, stones: 600, souls: 120,
         enrageHp: 0.3, enrageAtkMult: 3.0,
         desc: '하늘 위 섬에서 세계를 내려다보는 존재.'
     },
     {
-        name: '혼돈의 지배자', grade: '태초', recommendedPower: 1000000,
+        name: '혼돈의 지배자', grade: '태초', recommendedPower: 1000000, minPower: 400000,
         maxHp: 1000000, atk: 5000, def: 1000,
         gold: 30000000, stones: 2000, souls: 500,
         enrageHp: 0.3, enrageAtkMult: 3.5,
@@ -2381,17 +2382,23 @@ server.on('message', (msg, rinfo) => {
         // RPG - 사냥터 (Phase 3)
         // ══════════════════════════════════════════════
         if (cmd === '!사냥터') {
-            let msg = `🏕️ [사냥터 목록]\n─────────────────────\n`;
+            promoteParty(user);
+            const myStat = calcCharacterStat(user);
+            const myPower = calcCombatPower(myStat);
+            let msg = `🏕️ [사냥터 목록] 내 전투력: ${myPower.toLocaleString()}\n─────────────────────\n`;
             for (const h of HUNTING_GROUNDS) {
-                msg += `${EQUIP_GRADE_EMOJI[h.grade]||''}[${h.grade}] ${h.name} — 권장전투력 ${h.recommendedPower.toLocaleString()}\n`;
-                msg += `   ㄴ 골드 ${formatKRW(h.goldMin)}~${formatKRW(h.goldMax)}/시간 / 강화석 ${h.stoneMin}~${h.stoneMax}/시간\n`;
+                const canEnter = myPower >= h.minPower;
+                const lock = canEnter ? '' : ' 🔒';
+                msg += `${EQUIP_GRADE_EMOJI[h.grade]||''}[${h.grade}] ${h.name}${lock}\n`;
+                msg += `   최소 ${h.minPower.toLocaleString()} / 권장 ${h.recommendedPower.toLocaleString()}\n`;
+                msg += `   골드 ${formatKRW(h.goldMin)}~${formatKRW(h.goldMax)}/h / 강화석 ${h.stoneMin}~${h.stoneMax}/h\n`;
                 const extras = HUNT_LOOT_EXTRA[h.name] || [];
                 if (extras.length) {
                     const extraStr = extras.map(e => e.type === 'box' ? `${e.name}(${e.chance}%)` : `${e.type}(${e.chance}%)`).join(', ');
-                    msg += `   ㄴ 추가 전리품: ${extraStr}\n`;
+                    msg += `   추가: ${extraStr}\n`;
                 }
             }
-            msg += `─────────────────────\n!사냥시작 [사냥터명] — 사냥 파견\n!사냥종료 — 귀환 + 전리품 수령\n!사냥현황 — 현재 사냥 중 확인\n💡 장시간 사냥할수록 전리품 ↑ (최대 8시간)`;
+            msg += `─────────────────────\n!사냥시작 [사냥터명] / !사냥종료 / !사냥현황\n💡 최소 전투력 미달 시 입장 불가`;
             return reply(msg);
         }
 
@@ -2411,12 +2418,25 @@ server.on('message', (msg, rinfo) => {
             promoteParty(user);
             const stat = calcCharacterStat(user);
             const power = calcCombatPower(stat);
+
+            // ── 최소 전투력 미달 시 입장 차단 ──
+            if (power < ground.minPower) {
+                return reply(
+                    `🚫 [입장 불가] ${ground.name}\n` +
+                    `최소 전투력: ${ground.minPower.toLocaleString()}\n` +
+                    `내 전투력: ${power.toLocaleString()}\n` +
+                    `부족: ${(ground.minPower - power).toLocaleString()}\n\n` +
+                    `💡 장비 강화, 용병 편성, 스킬 습득으로 전투력을 올려보세요.`
+                );
+            }
+
+            const effPct = Math.round(Math.min(300, power / ground.recommendedPower * 100));
             huntSessions[huntKey] = { ground, startedAt: Date.now(), stat, power };
 
             return reply(
                 `🏹 [사냥 시작] ${EQUIP_GRADE_EMOJI[ground.grade]||''}${ground.name}\n` +
                 `내 전투력: ${power.toLocaleString()} / 권장: ${ground.recommendedPower.toLocaleString()}\n` +
-                `효율: ${Math.round(Math.min(300, power / ground.recommendedPower * 100))}%\n` +
+                `효율: ${effPct}%${effPct < 50 ? ' ⚠️ 전투력 부족 — 효율 저하' : ''}\n` +
                 `─────────────────────\n` +
                 `파견 완료! 언제든 !사냥종료 로 귀환하세요.\n최대 8시간까지 전리품이 쌓입니다.`
             );
@@ -2603,15 +2623,21 @@ server.on('message', (msg, rinfo) => {
         // RPG - 레이드 (Phase 4) — 턴제 보스전
         // ══════════════════════════════════════════════
         if (cmd === '!레이드목록' || cmd === '!보스목록') {
-            let m = `👹 [레이드 보스 목록]\n─────────────────────\n`;
+            promoteParty(user);
+            const myStat2 = calcCharacterStat(user);
+            const myPower2 = calcCombatPower(myStat2);
+            let m = `👹 [레이드 보스 목록] 내 전투력: ${myPower2.toLocaleString()}\n─────────────────────\n`;
             for (const b of RAID_BOSSES) {
                 const killed = (user.bossKills && user.bossKills[b.name]) || 0;
                 const killMark = killed > 0 ? ` ✅(${killed}킬)` : '';
-                m += `${EQUIP_GRADE_EMOJI[b.grade]||''}[${b.grade}] ${b.name}${killMark}\n`;
-                m += `   HP:${b.maxHp.toLocaleString()} 공격:${b.atk} 방어:${b.def} / 권장전투력 ${b.recommendedPower.toLocaleString()}\n`;
+                const canEnter = myPower2 >= b.minPower;
+                const lock = canEnter ? '' : ' 🔒';
+                m += `${EQUIP_GRADE_EMOJI[b.grade]||''}[${b.grade}] ${b.name}${killMark}${lock}\n`;
+                m += `   최소 ${b.minPower.toLocaleString()} / 권장 ${b.recommendedPower.toLocaleString()}\n`;
+                m += `   HP:${b.maxHp.toLocaleString()} 공격:${b.atk} 방어:${b.def}\n`;
                 m += `   보상: 골드 ${formatKRW(b.gold)} / 강화석 ${b.stones} / 소울 ${b.souls}\n`;
             }
-            m += `─────────────────────\n!레이드 [보스이름] — 레이드 시작`;
+            m += `─────────────────────\n!레이드 [보스이름] — 레이드 시작\n🔒 = 최소 전투력 미달 (입장 불가)`;
             return reply(m);
         }
 
@@ -2624,7 +2650,7 @@ server.on('message', (msg, rinfo) => {
                 const list = brokenSlots2.map(s => `💔 ${SLOT_LABEL[s]}: ${user.equipment[s].name}`).join('\n');
                 return reply(
                     `⚠️ 파손된 장비가 있습니다!\n${list}\n\n` +
-                    `!장비수리전체 로 수리하거나\n!레이드 ${args[0]} 강행 으로 파손 상태로 진행\n(파손 장비 스탯은 0으로 적용)`
+                    `!장비수리전체 로 수리하거나\n!레이드 ${args.filter(a=>a!=='강행').join(' ')} 강행 으로 파손 상태로 진행\n(파손 장비 스탯은 0으로 적용)`
                 );
             }
 
@@ -2632,13 +2658,24 @@ server.on('message', (msg, rinfo) => {
             const boss = getRaidBoss(bossName);
             if (!boss) return reply(`❌ 존재하지 않는 보스: ${bossName}\n(!레이드목록 참고)`);
 
-            const raidCooldown = 120 * 1000;
-            const raidRemain = raidCooldown - (Date.now() - (user.lastRaidAt || 0));
-            if (raidRemain > 0) return reply(`⏳ 레이드 쿨타임: ${Math.ceil(raidRemain/1000)}초 후 재시도 가능`);
-
             promoteParty(user);
             const stat = calcCharacterStat(user);
             const power = calcCombatPower(stat);
+
+            // ── 최소 전투력 미달 시 입장 차단 ──
+            if (power < boss.minPower) {
+                return reply(
+                    `🚫 [입장 불가] ${boss.name}\n` +
+                    `최소 전투력: ${boss.minPower.toLocaleString()}\n` +
+                    `내 전투력: ${power.toLocaleString()}\n` +
+                    `부족: ${(boss.minPower - power).toLocaleString()}\n\n` +
+                    `💡 장비 강화, 용병 편성, 스킬 습득으로 전투력을 올려보세요.`
+                );
+            }
+
+            const raidCooldown = 120 * 1000;
+            const raidRemain = raidCooldown - (Date.now() - (user.lastRaidAt || 0));
+            if (raidRemain > 0) return reply(`⏳ 레이드 쿨타임: ${Math.ceil(raidRemain/1000)}초 후 재시도 가능`);
 
             user.lastRaidAt = Date.now();
             saveData(db);
