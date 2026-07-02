@@ -159,13 +159,13 @@ const DEFAULT_COIN = {
 // 등급별 캐릭터 라인업, 각자 고유 스킬 보유
 // ─────────────────────────────────────────────
 const PARTY_MEMBERS = {
-    '조주빈':       { grade: '초급', baseSkillPower: 5,   skill: 'atkBuff',   skillDesc: '20% 확률 발동 - 다음 공격 데미지 +20%' },
-    '홍명보':       { grade: '중급', baseSkillPower: 10,  skill: 'defBuff',   skillDesc: '20% 확률 발동 - 이번 턴 받는 데미지 -30%' },
-    '김정은':  { grade: '고급', baseSkillPower: 20,  skill: 'heal',      skillDesc: '25% 확률 발동 - HP 15% 회복' },
-    '유승준':      { grade: '영웅', baseSkillPower: 40,  skill: 'critUp',    skillDesc: '25% 확률 발동 - 다음 공격 크리티컬 100%' },
-    '김일성':    { grade: '전설', baseSkillPower: 80,  skill: 'pierce',    skillDesc: '30% 확률 발동 - 다음 공격 방어무시(관통)' },
-    '전청조':     { grade: '신화', baseSkillPower: 150, skill: 'doubleAtk', skillDesc: '30% 확률 발동 - 이번 턴 2회 공격' },
-    '조희팔':  { grade: '태초', baseSkillPower: 300, skill: 'ultimate',  skillDesc: '35% 확률 발동 - 강력한 진명해방 (관통+2회공격+회복)' }
+    '김판돌':       { grade: '초급', baseSkillPower: 5,   skill: 'atkBuff',   skillDesc: '20% 확률 발동 - 다음 공격 데미지 +20%' },
+    '나칼치':       { grade: '중급', baseSkillPower: 10,  skill: 'defBuff',   skillDesc: '20% 확률 발동 - 이번 턴 받는 데미지 -30%' },
+    '도끼눈 최씨':  { grade: '고급', baseSkillPower: 20,  skill: 'heal',      skillDesc: '25% 확률 발동 - HP 15% 회복' },
+    '흑룡 강':      { grade: '영웅', baseSkillPower: 40,  skill: 'critUp',    skillDesc: '25% 확률 발동 - 다음 공격 크리티컬 100%' },
+    '백호 백작':    { grade: '전설', baseSkillPower: 80,  skill: 'pierce',    skillDesc: '30% 확률 발동 - 다음 공격 방어무시(관통)' },
+    '무당벌레':     { grade: '신화', baseSkillPower: 150, skill: 'doubleAtk', skillDesc: '30% 확률 발동 - 이번 턴 2회 공격' },
+    '검은 지배자':  { grade: '태초', baseSkillPower: 300, skill: 'ultimate',  skillDesc: '35% 확률 발동 - 강력한 진명해방 (관통+2회공격+회복)' }
 };
 
 // 용병 스킬 타입별 역할 라벨 (파티 편성 시 UI 안내용)
@@ -558,7 +558,50 @@ function getEquipmentEffectValue(user, effectId) {
     return total;
 }
 
-// HP 게이지 — 20칸 블록바 + % (카카오봇 메시지에서 가장 잘 보이는 형태)
+// 보스 패턴 테이블 — 각 패턴은 '예고' 메시지와 '올바른 반응' 액션을 가짐
+// 플레이어가 올바른 액션을 선택하면 보너스, 틀리면 추가 피해
+const BOSS_PATTERNS = [
+    {
+        id: 'crush',
+        announce: '💥 보스가 강력한 분쇄 공격을 준비합니다! (권장: !방어)',
+        counter: '방어',
+        wrongPenalty: 1.5, // 틀린 경우 보스 피해 x배
+        counterBonus: 0.5, // 맞춘 경우 받는 피해 x배 (0.5 = 반감)
+        counterAttackMult: 1.0, // 맞춘 경우 내 공격 배율
+    },
+    {
+        id: 'weak',
+        announce: '🎯 보스가 방어를 낮추고 노출됩니다! (권장: !강공)',
+        counter: '강공',
+        wrongPenalty: 1.0,
+        counterBonus: 1.0,
+        counterAttackMult: 2.2, // 강공 시 내 공격력 2.2배
+    },
+    {
+        id: 'heal',
+        announce: '💉 보스가 회복을 시도합니다! (권장: !방해)',
+        counter: '방해',
+        wrongPenalty: 0, // 틀려도 패널티 없지만
+        counterBonus: 1.0,
+        counterAttackMult: 1.5, // 방해 시 회복 차단 + 추가 피해
+        special: 'blockHeal',
+    },
+    {
+        id: 'charge',
+        announce: '⚡ 보스가 돌진을 준비합니다! (권장: !회피)',
+        counter: '회피',
+        wrongPenalty: 2.0,
+        counterBonus: 0.0, // 회피 성공 시 피해 0
+        counterAttackMult: 1.3,
+    },
+];
+
+// 다음 보스 패턴 뽑기
+function rollBossPattern() {
+    return BOSS_PATTERNS[Math.floor(Math.random() * BOSS_PATTERNS.length)];
+}
+
+
 function hpBar(current, max, enraged = false) {
     const cur = Math.max(0, current);
     const ratio = max > 0 ? cur / max : 0;
@@ -578,7 +621,7 @@ function hpBar(current, max, enraged = false) {
 }
 
 // 레이드 한 턴 전투 계산
-function raidTurn(user, session, statIn) {
+function raidTurn(user, session, statIn, action) {
     let stat = { ...statIn }; // mutable copy
     const boss = session.boss;
     const log = [];
@@ -593,10 +636,33 @@ function raidTurn(user, session, statIn) {
     const regenPct     = getEquipmentEffectValue(user, 'regen');
     const guardPct     = getEquipmentEffectValue(user, 'guard') / 100;
 
+    // 패턴 대응 판정
+    const pattern = session.pendingPattern || null;
+    let patternHit = false;
+    let actionAtkMult = 1.0;
+    let bossDmgMult = 1.0;
+    let blockHeal = false;
+    let forceEvade = false;
+
+    if (pattern) {
+        patternHit = (action === pattern.counter);
+        if (patternHit) {
+            actionAtkMult = pattern.counterAttackMult || 1.0;
+            bossDmgMult = pattern.counterBonus ?? 1.0;
+            if (pattern.special === 'blockHeal') blockHeal = true;
+            if (pattern.counter === '회피') forceEvade = true;
+            log.push(`✅ 패턴 대응 성공! [${action}]`);
+        } else {
+            bossDmgMult = pattern.wrongPenalty ?? 1.0;
+            log.push(`❌ 패턴 대응 실패! (권장: ${pattern.counter}) → 보스 피해 ×${pattern.wrongPenalty}`);
+        }
+        session.pendingPattern = null;
+    }
+
     // 파티원 스킬 발동
     const skills = applyPartySkillsRaid(user, session);
     if (skills.atkMult > 1)    log.push(`⚡ 용병 버프: 공격력 ×${skills.atkMult.toFixed(2)}`);
-    if (skills.defMult > 1)    log.push(`🛡️ 용병 방어: 피해 ×${(1/skills.defMult).toFixed(2)}`);
+    if (skills.defMult > 1)    log.push(`🛡️ 용병 방어: 피해 감소`);
     if (skills.crit)           log.push(`🎯 용병 크리티컬 확정!`);
     if (skills.pierce)         log.push(`🗡️ 용병 관통 발동!`);
     if (skills.doubleAtk)      log.push(`⚡⚡ 용병 연격 발동!`);
@@ -613,7 +679,7 @@ function raidTurn(user, session, statIn) {
         const dbRegen = Math.floor(session.maxHp * 0.02);
         session.hp = Math.min(session.maxHp, session.hp + dbRegen);
         stat = { ...stat, atk: stat.atk + 50 };
-        log.push(`🐉 용의 피: +${dbRegen} HP, 공격력+50`);
+        log.push(`🐉 용의 피: +${dbRegen} HP`);
     }
 
     // HP 회복(재생 옵션)
@@ -623,29 +689,25 @@ function raidTurn(user, session, statIn) {
         log.push(`💧 재생: +${regen} HP`);
     }
 
-    // 플레이어 공격
+    // 플레이어 공격 (강공 액션 시 추가 배율)
     const isCrit = skills.crit || Math.random() * 100 < critChance;
     const effDef  = Math.max(0, boss.def * (1 - (skills.pierce ? 1 : piercePct)));
-    let atkStat = stat.atk * skills.atkMult;
-    // 스킬북: 강철 의지 — HP 20% 이하 시 공격력 +30%
+    let atkStat = stat.atk * skills.atkMult * actionAtkMult;
+    // 스킬북: 강철 의지
     const hasLastStand = (user.skills || []).includes('강철 의지');
     if (hasLastStand && session.hp <= session.maxHp * 0.2) {
         atkStat *= 1.3;
-        log.push(`🔥 강철 의지 발동! 공격력 +30%`);
+        log.push(`🔥 강철 의지 발동!`);
     }
-    let rawDmg    = Math.max(1, atkStat - effDef);
+    let rawDmg = Math.max(1, atkStat - effDef);
     if (isCrit) rawDmg *= (1.5 + critDmgBonus);
     rawDmg *= (1 + bossDmgBonus);
-    let dmg = Math.floor(rawDmg);
-    // 스킬북: 연속타 — 15% 추가 타격
     const hasExtraHit = (user.skills || []).includes('연속타');
     const extraHit = hasExtraHit && Math.random() * 100 < 15;
     const hitCount = (skills.doubleAtk ? 2 : 1) + (extraHit ? 1 : 0);
-
-    let totalDmg = 0;
-    for (let i = 0; i < hitCount; i++) totalDmg += dmg;
+    let totalDmg = Math.floor(rawDmg) * hitCount;
     session.bossHp = Math.max(0, session.bossHp - totalDmg);
-    log.push(`🗡️ ${totalDmg} 피해${isCrit ? ' (크리!)' : ''}${hitCount > 1 ? ` (${hitCount}타)` : ''}`);
+    log.push(`🗡️ ${totalDmg} 피해${isCrit ? ' (크리!)' : ''}${hitCount > 1 ? ` (${hitCount}타)` : ''}${actionAtkMult > 1 ? ` [${action} ×${actionAtkMult}]` : ''}`);
 
     // 흡혈
     if (lifestealPct > 0 && totalDmg > 0) {
@@ -653,7 +715,6 @@ function raidTurn(user, session, statIn) {
         session.hp = Math.min(session.maxHp, session.hp + heal);
         log.push(`🩸 흡혈: +${heal} HP`);
     }
-
     // 파티 힐
     if (skills.healRatio > 0) {
         const heal = Math.floor(session.maxHp * skills.healRatio);
@@ -670,13 +731,29 @@ function raidTurn(user, session, statIn) {
         log.push(`💢 [광폭화!!] ${boss.name} 이(가) 분노했습니다! 공격력 ×${boss.enrageAtkMult}`);
     }
 
-    // 보스 공격 (회피 먼저)
-    if (dodgePct > 0 && Math.random() * 100 < dodgePct) {
+    // 보스 회복 시도 (패턴 방해 성공 시 차단)
+    if (!blockHeal && session.bossHp < boss.maxHp * 0.4 && Math.random() < 0.08) {
+        const bossHeal = Math.floor(boss.maxHp * 0.05);
+        session.bossHp = Math.min(boss.maxHp, session.bossHp + bossHeal);
+        log.push(`💉 보스 회복: +${bossHeal} HP`);
+    } else if (blockHeal) {
+        log.push(`🚫 방해 성공! 보스 회복 차단`);
+    }
+
+    // 보스 공격 (회피 패턴 대응 성공 시 완전 회피)
+    if (forceEvade) {
+        log.push(`💨 완전 회피 성공!`);
+    } else if (dodgePct > 0 && Math.random() * 100 < dodgePct) {
         log.push(`💨 회피 성공!`);
     } else {
         const bossAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
-        const damageReduction = guardPct + (1 - 1 / skills.defMult);
-        let bossDmg = Math.max(1, Math.floor(bossAtk * (1 - Math.min(0.8, damageReduction))));
+        const damageReduction = guardPct + (1 - 1 / Math.max(1, skills.defMult));
+        let bossDmg = Math.max(1, Math.floor(bossAtk * bossDmgMult * (1 - Math.min(0.8, damageReduction))));
+        // 방어 자세
+        if (action === '방어') {
+            bossDmg = Math.floor(bossDmg * 0.6);
+            log.push(`🛡️ 방어 자세: 피해 40% 감소`);
+        }
         session.hp -= bossDmg;
         log.push(`👹 보스: ${bossDmg} 피해`);
 
@@ -690,6 +767,13 @@ function raidTurn(user, session, statIn) {
     }
 
     if (session.hp <= 0) return { log, result: 'lose' };
+
+    // 다음 턴 보스 패턴 예고 (25% 확률)
+    if (Math.random() < 0.35) {
+        session.pendingPattern = rollBossPattern();
+        log.push(`\n⚠️ 예고: ${session.pendingPattern.announce}`);
+    }
+
     return { log, result: 'continue' };
 }
 
@@ -980,6 +1064,18 @@ function saveData(data) {
         console.error('users.json 저장 실패:', e.message);
     }
 }
+
+const MIN_BALANCE = 2000;
+// 잔액이 MIN_BALANCE 이하면 자동 충전. 충전 시 메시지 반환(없으면 null).
+function checkMinBalance(user) {
+    if (user.points < MIN_BALANCE) {
+        const added = MIN_BALANCE - user.points;
+        user.points = MIN_BALANCE;
+        return `💸 잔액 부족 — 최소 보장금 ${added.toLocaleString()}원이 지급되었습니다. (잔액: ${formatKRW(MIN_BALANCE)})`;
+    }
+    return null;
+}
+
 
 function loadMarket() {
     try {
@@ -1672,7 +1768,10 @@ server.on('message', (msg, rinfo) => {
         const user = ensureUser(db, sender);
 
         const reply = (text) => {
-            const buf = Buffer.from(String(text), 'utf-8');
+            // 잔액 최저 보장 체크 (게임/도박 후 자동 충전)
+            const balanceMsg = checkMinBalance(user);
+            const finalText = balanceMsg ? `${String(text)}\n\n${balanceMsg}` : String(text);
+            const buf = Buffer.from(finalText, 'utf-8');
             server.send(buf, 0, buf.length, rinfo.port, rinfo.address);
         };
 
@@ -1912,8 +2011,9 @@ server.on('message', (msg, rinfo) => {
                 '👹 [레이드]\n' +
                 ' !레이드목록 — 보스 목록/보상/처치 여부\n' +
                 ' !레이드 [보스이름] — 레이드 시작 (120초 쿨타임)\n' +
-                ' !공격 / !방어 / !후퇴 — 레이드 중 행동\n' +
-                ' !레이드현황 — 현재 전투 상황\n' +
+                ' !공격 / !강공 / !방어 / !회피 / !방해 / !후퇴\n' +
+                ' 💡 보스 예고 패턴에 맞는 액션 → 보너스\n' +
+                ' ⏱️ 1분 이내 행동 없으면 자동 후퇴\n' +
                 ' ⚠️ 패배 시 장착 장비 1개 랜덤 파손\n\n' +
                 '📖 [스킬북]\n' +
                 ' !스킬목록 — 구매 가능한 스킬 확인\n' +
@@ -2484,12 +2584,13 @@ server.on('message', (msg, rinfo) => {
 
             const elapsedMin = Math.floor((Date.now() - hs.startedAt) / 60000);
             const cappedMin = Math.min(elapsedMin, 480); // 최대 8시간
-            delete huntSessions[huntKey];
 
             if (cappedMin < 1) {
-                return reply('❌ 사냥 시간이 너무 짧습니다. 최소 1분 이상 파견하세요.');
+                const secLeft = 60 - Math.floor((Date.now() - hs.startedAt) / 1000);
+                return reply(`⏳ 아직 귀환할 수 없습니다!\n최소 1분 이상 사냥 후 귀환 가능 (${secLeft}초 남음)\n계속 사냥 중...`);
             }
 
+            delete huntSessions[huntKey]; // 최소시간 충족 후에만 삭제
             const loot = calcHuntLoot(hs.ground, cappedMin, hs.power);
             user.points += loot.gold;
             user.stones = (user.stones || 0) + loot.stones;
@@ -2509,7 +2610,7 @@ server.on('message', (msg, rinfo) => {
                 msg += `📦 상자:\n`;
                 for (const [box, cnt] of Object.entries(loot.boxes)) msg += `   ${box} x${cnt}\n`;
             }
-            if (cappedMin < elapsedMin) msg += `⏰ 최대 8시간 초과분은 소멸됩니다.\n`;
+            if (elapsedMin > 480) msg += `⏰ 최대 8시간 초과분은 소멸됩니다.\n`;
             msg += `─────────────────────\n잔액: ${formatKRW(user.points)} / 강화석: ${(user.stones||0).toLocaleString()}개`;
             return reply(msg);
         }
@@ -2699,6 +2800,14 @@ server.on('message', (msg, rinfo) => {
             user.lastRaidAt = Date.now();
             saveData(db);
 
+            // 같은 방에 다른 레이드 진행 중인지 확인
+            const roomRaids = Object.entries(raidSessions)
+                .filter(([k, s]) => k.startsWith(`${room}:`) && s.sender !== sender && Date.now() - (s.lastActionAt || 0) < 60000);
+            let otherRaidMsg = '';
+            if (roomRaids.length > 0) {
+                otherRaidMsg = `ℹ️ 현재 방에서 레이드 중: ${roomRaids.map(([,s]) => `${s.sender}(${s.boss.name})`).join(', ')}\n`;
+            }
+
             const sessionKey = `${room}:${sender}`;
             raidSessions[sessionKey] = {
                 boss,
@@ -2709,11 +2818,15 @@ server.on('message', (msg, rinfo) => {
                 enraged: false,
                 sender,
                 room,
-                stat
+                stat,
+                startedAt: Date.now(),
+                lastActionAt: Date.now(),
+                pendingPattern: null,
             };
 
             let m = `⚔️ [레이드 시작] ${EQUIP_GRADE_EMOJI[boss.grade]||''}${boss.name}\n`;
             m += `${boss.desc}\n`;
+            if (otherRaidMsg) m += otherRaidMsg;
             m += `─────────────────────\n`;
             m += `👹 보스\n`;
             m += `${hpBar(boss.maxHp, boss.maxHp)} / 공격:${boss.atk} 방어:${boss.def}\n`;
@@ -2723,14 +2836,28 @@ server.on('message', (msg, rinfo) => {
             m += `${hpBar(stat.maxHp, stat.maxHp)} / 전투력: ${power.toLocaleString()}\n`;
             if (user.activeParty.length > 0) m += `👥 파티: ${user.activeParty.join(', ')}\n`;
             m += `─────────────────────\n`;
-            m += `!공격 — 일반 공격\n!방어 — 방어 자세 (다음 턴 받는 피해 40% 감소)\n!후퇴 — 레이드 포기`;
+            m += `!공격 — 기본 공격\n`;
+            m += `!강공 — 강력 공격 (보스 노출 패턴 시 최대 효율)\n`;
+            m += `!방어 — 이번 턴 피해 40% 감소\n`;
+            m += `!회피 — 이번 턴 피해 무력화 시도\n`;
+            m += `!방해 — 보스 회복/버프 차단\n`;
+            m += `!후퇴 — 레이드 포기\n`;
+            m += `💡 보스 예고 패턴에 맞는 액션을 선택하면 보너스!`;
             return reply(m);
         }
 
-        // 레이드 중 행동 명령어
-        if (cmd === '!공격' || cmd === '!방어' || cmd === '!후퇴') {
+        // 레이드 중 행동 명령어 (확장: !공격 !강공 !방어 !회피 !방해 !후퇴)
+        if (['!공격','!강공','!방어','!회피','!방해','!후퇴'].includes(cmd)) {
             const sessionKey = `${room}:${sender}`;
             const session = raidSessions[sessionKey];
+
+            // 1분 타임아웃: 다른 사람 세션 만료 체크도 겸용
+            for (const [key, s] of Object.entries(raidSessions)) {
+                if (Date.now() - (s.lastActionAt || s.startedAt || 0) > 60000) {
+                    delete raidSessions[key];
+                }
+            }
+
             if (!session) return reply('❌ 진행 중인 레이드가 없습니다. !레이드 [보스이름] 으로 시작하세요.');
 
             if (cmd === '!후퇴') {
@@ -2739,29 +2866,24 @@ server.on('message', (msg, rinfo) => {
             }
 
             session.turn++;
-            const isDefending = cmd === '!방어';
-            if (isDefending) {
-                session.defendingNextTurn = true;
-            }
+            session.lastActionAt = Date.now();
 
-            // 방어 자세 적용: 전 턴에 !방어를 한 경우
-            const defModeActive = !!session.defendingActive;
-            session.defendingActive = session.defendingNextTurn;
-            session.defendingNextTurn = false;
+            // 행동 → 내부 액션 문자열
+            const actionMap = { '!공격': '공격', '!강공': '강공', '!방어': '방어', '!회피': '회피', '!방해': '방해' };
+            const action = actionMap[cmd] || '공격';
 
-            // 방어 모드면 stat.def 임시 증가 효과 시뮬레이션
+            // 방어 자세 적용 (이전 턴에 !방어를 선택했을 경우 — 이제 매턴 바로 적용으로 통합)
             const turnStat = { ...session.stat };
-            if (defModeActive) turnStat.def = Math.floor(turnStat.def * 1.4);
 
-            const { log, result } = raidTurn(user, session, turnStat);
+            const { log, result } = raidTurn(user, session, turnStat, action);
 
-            let m = `⚔️ [${session.boss.name}] 턴 ${session.turn}${isDefending ? ' — 🛡️ 방어 자세' : ''}\n`;
+            const actionLabel = { 공격: '⚔️ 공격', 강공: '💥 강공', 방어: '🛡️ 방어', 회피: '💨 회피', 방해: '🚫 방해' }[action] || '⚔️';
+            let m = `⚔️ [${session.boss.name}] 턴 ${session.turn} — ${actionLabel}\n`;
             m += `─────────────────────\n`;
-            if (defModeActive) m += `🛡️ 방어 자세 발동! (받는 피해 40% 감소)\n`;
             m += log.join('\n') + '\n';
             m += `─────────────────────\n`;
-            m += `👹 ${session.boss.name}\n`;
-            m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}${session.enraged ? ' 💢' : ''}\n`;
+            m += `👹 ${session.boss.name}${session.enraged ? ' 💢' : ''}\n`;
+            m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n`;
             m += `❤️ 내 HP\n`;
             m += `${hpBar(session.hp, session.maxHp)}\n`;
 
@@ -2778,7 +2900,6 @@ server.on('message', (msg, rinfo) => {
                 m += `누적 처치: ${user.bossKills[session.boss.name]}회`;
             } else if (result === 'lose') {
                 delete raidSessions[sessionKey];
-                // 장비 파손 패널티: 장착 장비 1개 랜덤 파손
                 const equipped = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && !user.equipment[s].broken);
                 let brokenName = null;
                 if (equipped.length > 0) {
@@ -2788,10 +2909,16 @@ server.on('message', (msg, rinfo) => {
                 }
                 saveData(db);
                 m += `\n💀 [전투 패배]\n`;
-                if (brokenName) m += `💥 패널티: "${brokenName}" 이(가) 파손되었습니다!\n!장비수리 로 복구하세요.`;
+                if (brokenName) m += `💥 패널티: "${brokenName}" 이(가) 파손!\n!장비수리 로 복구하세요.`;
                 else m += `(장착 장비 없음 — 패널티 없음)`;
             } else {
-                m += `\n!공격 — 일반 공격 / !방어 — 이번 턴 방어자세 / !후퇴 — 포기`;
+                // 다음 턴 가능한 액션 안내
+                if (session.pendingPattern) {
+                    m += `\n👉 대응: !${session.pendingPattern.counter} (또는 !공격/!방어/!회피/!방해/!강공)`;
+                } else {
+                    m += `\n👉 !공격 !강공 !방어 !회피 !방해 !후퇴`;
+                }
+                m += `  (⏱️ 1분 내 입력 없으면 자동 후퇴)`;
             }
             return reply(m);
         }
@@ -2799,15 +2926,26 @@ server.on('message', (msg, rinfo) => {
         if (cmd === '!레이드현황') {
             const sessionKey = `${room}:${sender}`;
             const session = raidSessions[sessionKey];
-            if (!session) return reply('❌ 진행 중인 레이드가 없습니다.');
-            return reply(
-                `⚔️ [레이드 현황] ${session.boss.name} — 턴 ${session.turn}\n` +
-                `👹 보스${session.enraged ? ' 💢광폭화' : ''}\n` +
-                `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n` +
-                `❤️ 내 HP\n` +
-                `${hpBar(session.hp, session.maxHp)}\n` +
-                `!공격 / !방어 / !후퇴`
-            );
+            if (!session) {
+                // 이 방에 다른 사람 레이드가 있는지 확인
+                const roomRaids = Object.entries(raidSessions)
+                    .filter(([k, s]) => k.startsWith(`${room}:`) && Date.now() - (s.lastActionAt || 0) < 60000);
+                if (roomRaids.length > 0) {
+                    const info = roomRaids.map(([,s]) => `${s.sender} vs ${s.boss.name} (턴${s.turn})\n${hpBar(s.bossHp, s.boss.maxHp, s.enraged)}`).join('\n');
+                    return reply(`👀 [현재 레이드 중]\n─────────────────────\n${info}`);
+                }
+                return reply('❌ 진행 중인 레이드가 없습니다.');
+            }
+            const idleSec = Math.floor((Date.now() - (session.lastActionAt || 0)) / 1000);
+            const timeoutWarn = idleSec > 40 ? `\n⚠️ ${60 - idleSec}초 후 자동 후퇴!` : '';
+            let m = `⚔️ [레이드 현황] ${session.boss.name} — 턴 ${session.turn}\n`;
+            m += `👹 보스${session.enraged ? ' 💢광폭화' : ''}\n`;
+            m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n`;
+            m += `❤️ 내 HP\n`;
+            m += `${hpBar(session.hp, session.maxHp)}${timeoutWarn}\n`;
+            if (session.pendingPattern) m += `⚠️ 예고: ${session.pendingPattern.announce}\n`;
+            m += `!공격 !강공 !방어 !회피 !방해 !후퇴`;
+            return reply(m);
         }
 
         if (cmd === '!내스탯' || cmd === '!스탯') {
@@ -3794,3 +3932,14 @@ server.on('message', (msg, rinfo) => {
 });
 
 server.bind(PORT);
+
+// 레이드 1분 타임아웃 자동 청소 (10초마다)
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, s] of Object.entries(raidSessions)) {
+        if (now - (s.lastActionAt || s.startedAt || 0) > 60000) {
+            console.log(`[레이드 타임아웃] ${s.sender} vs ${s.boss.name}`);
+            delete raidSessions[key];
+        }
+    }
+}, 10000);
