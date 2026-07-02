@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+const PORT = 3001;
 const DATA_FILE = path.join(__dirname, 'users.json');
 const MARKET_FILE = path.join(__dirname, 'market.json');
 const CONFIG_FILE = path.join(__dirname, 'config.json');
@@ -243,7 +243,9 @@ const EFFECT_POOL = [
     { id: 'dodge',     label: '회피율',        appliesTo: ['armor', 'shield', 'ring'], unit: '%', baseVal: 1,  perGrade: 0.8, desc: v => `회피율 +${v}%` },
     { id: 'regen',     label: '재생',          appliesTo: ['armor', 'ring'],           unit: '%', baseVal: 1,  perGrade: 0.7, desc: v => `매 턴 최대체력의 ${v}% 회복` },
     { id: 'guard',     label: '철벽',          appliesTo: ['shield'],                  unit: '%', baseVal: 3,  perGrade: 2,   desc: v => `받는 피해 ${v}% 감소` },
-    { id: 'proc',      label: '용병 발동률',   appliesTo: ['ring'],                    unit: '%', baseVal: 2,  perGrade: 1.5, desc: v => `용병 스킬 발동확률 +${v}%` }
+    { id: 'proc',      label: '용병 발동률',   appliesTo: ['ring'],                    unit: '%', baseVal: 2,  perGrade: 1.5, desc: v => `용병 스킬 발동확률 +${v}%` },
+    { id: 'mana',      label: '마력',          appliesTo: ['weapon', 'armor', 'ring'], unit: '',  baseVal: 5,  perGrade: 8,   desc: v => `최대 마력 +${v}` },
+    { id: 'manaRegen', label: '마력회복',      appliesTo: ['ring', 'armor'],           unit: '',  baseVal: 1,  perGrade: 0.5, desc: v => `턴당 마력회복 +${v}` },
 ];
 const EFFECT_ATTACH_CHANCE = 0.4; // 아이템 생성 시 특수옵션이 붙을 확률
 
@@ -418,14 +420,20 @@ const huntSessions = {}; // `hunt:${sender}` → { ground, startedAt, stat }
 // 사냥터별 전리품 테이블 (시간 당 평균 기대값, 실제는 확률적으로 분배)
 // 특수 드랍: 등급 맞는 장비상자, 용병상자, 강화석
 const HUNT_LOOT_EXTRA = {
-    '뒷산':       [ { type: 'box', name: '초급장비상자', chance: 3 }, { type: 'box', name: '초급용병상자', chance: 2 } ],
-    '어두운 숲':  [ { type: 'box', name: '중급장비상자', chance: 2 }, { type: 'box', name: '초급용병상자', chance: 4 }, { type: 'box', name: '중급용병상자', chance: 1 } ],
-    '폐광':       [ { type: 'box', name: '고급장비상자', chance: 2 }, { type: 'box', name: '중급용병상자', chance: 3 }, { type: 'stones', amount: [5,15], chance: 20 } ],
-    '얼음 동굴':  [ { type: 'box', name: '영웅장비상자', chance: 1 }, { type: 'box', name: '고급용병상자', chance: 2 }, { type: 'stones', amount: [10,30], chance: 30 } ],
-    '용의 둥지':  [ { type: 'box', name: '전설장비상자', chance: 1 }, { type: 'box', name: '영웅용병상자', chance: 1 }, { type: 'stones', amount: [20,60], chance: 40 }, { type: 'souls', amount: [1,3], chance: 10 } ],
-    '천공의 섬':  [ { type: 'box', name: '신화장비상자', chance: 1 }, { type: 'box', name: '전설용병상자', chance: 1 }, { type: 'stones', amount: [50,150], chance: 50 }, { type: 'souls', amount: [2,8], chance: 15 } ],
-    '혼돈의 균열':[ { type: 'box', name: '신화용병상자', chance: 1 }, { type: 'stones', amount: [100,300], chance: 60 }, { type: 'souls', amount: [5,20], chance: 20 } ]
+    '뒷산':       [ { type: 'box', name: '초급장비상자', chance: 3 }, { type: 'box', name: '초급용병상자', chance: 2 }, { type: 'spell', tier: 1, chance: 5 } ],
+    '어두운 숲':  [ { type: 'box', name: '중급장비상자', chance: 2 }, { type: 'box', name: '중급용병상자', chance: 1 }, { type: 'spell', tier: 1, chance: 8 } ],
+    '폐광':       [ { type: 'box', name: '고급장비상자', chance: 2 }, { type: 'box', name: '중급용병상자', chance: 3 }, { type: 'stones', amount: [5,15], chance: 20 }, { type: 'spell', tier: 1, chance: 10 }, { type: 'spell', tier: 2, chance: 3 } ],
+    '얼음 동굴':  [ { type: 'box', name: '영웅장비상자', chance: 1 }, { type: 'box', name: '고급용병상자', chance: 2 }, { type: 'stones', amount: [10,30], chance: 30 }, { type: 'spell', tier: 2, chance: 5 } ],
+    '용의 둥지':  [ { type: 'box', name: '전설장비상자', chance: 1 }, { type: 'box', name: '영웅용병상자', chance: 1 }, { type: 'stones', amount: [20,60], chance: 40 }, { type: 'souls', amount: [1,3], chance: 10 }, { type: 'spell', tier: 2, chance: 8 }, { type: 'spell', tier: 3, chance: 2 } ],
+    '천공의 섬':  [ { type: 'box', name: '신화장비상자', chance: 1 }, { type: 'box', name: '전설용병상자', chance: 1 }, { type: 'stones', amount: [50,150], chance: 50 }, { type: 'souls', amount: [2,8], chance: 15 }, { type: 'spell', tier: 3, chance: 4 } ],
+    '혼돈의 균열':[ { type: 'box', name: '신화용병상자', chance: 1 }, { type: 'stones', amount: [100,300], chance: 60 }, { type: 'souls', amount: [5,20], chance: 20 }, { type: 'spell', tier: 3, chance: 6 }, { type: 'spell', tier: 4, chance: 1 } ]
 };
+// 사냥터 드랍: tier에 맞는 랜덤 마법 1종
+function rollSpellDrop(tier) {
+    const pool = MAGIC_BOOKS.filter(m => m.tier === tier);
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)].id;
+}
 
 // 사냥 종료 전리품 계산 (경과 시간 기반, 전투력이 높을수록 효율 증가)
 function calcHuntLoot(ground, elapsedMin, userPower) {
@@ -451,6 +459,9 @@ function calcHuntLoot(ground, elapsedMin, userPower) {
                     loot.stones += Math.floor(ex.amount[0] + Math.random() * (ex.amount[1] - ex.amount[0]));
                 } else if (ex.type === 'souls') {
                     loot.souls += Math.floor(ex.amount[0] + Math.random() * (ex.amount[1] - ex.amount[0]));
+                } else if (ex.type === 'spell') {
+                    const spellId = rollSpellDrop(ex.tier);
+                    if (spellId) { if (!loot.spells) loot.spells = []; loot.spells.push(spellId); }
                 }
             }
         }
@@ -464,14 +475,14 @@ function calcHuntLoot(ground, elapsedMin, userPower) {
 const RAID_BOSSES = [
     {
         name: '킹 슬라임', grade: '초급', recommendedPower: 200, minPower: 60,
-        maxHp: 300, atk: 12, def: 3,
+        maxHp: 500, atk: 12, def: 3,
         gold: 5000, stones: 5, souls: 1,
         enrageHp: 0.3, enrageAtkMult: 1.8,
         desc: '거대한 젤리 덩어리. 작은 슬라임들을 흡수해 힘을 키웠다.'
     },
     {
         name: '숲의 수호자', grade: '중급', recommendedPower: 800, minPower: 300,
-        maxHp: 1200, atk: 30, def: 10,
+        maxHp: 1500, atk: 30, def: 10,
         gold: 20000, stones: 15, souls: 3,
         enrageHp: 0.3, enrageAtkMult: 2.0,
         desc: '고대 숲을 지키는 정령. 분노하면 자연의 힘을 해방한다.'
@@ -565,33 +576,33 @@ const BOSS_PATTERNS = [
         id: 'crush',
         announce: '💥 보스가 강력한 분쇄 공격을 준비합니다!',
         counter: '방어',
-        wrongPenalty: 1.5, // 틀린 경우 보스 피해 x배
-        counterBonus: 0.5, // 맞춘 경우 받는 피해 x배 (0.5 = 반감)
-        counterAttackMult: 1.0, // 맞춘 경우 내 공격 배율
+        wrongPenalty: 1.5,
+        counterBonus: 0.5,
+        counterAttackMult: 1.0,
     },
     {
         id: 'weak',
-        announce: '🎯 보스가 방어를 낮추고 노출됩니다!',
+        announce: '🎯 보스가 방어를 낮추고 약점을 노출합니다!',
         counter: '강공',
         wrongPenalty: 1.0,
         counterBonus: 1.0,
-        counterAttackMult: 2.2, // 강공 시 내 공격력 2.2배
+        counterAttackMult: 2.2,
     },
     {
         id: 'heal',
-        announce: '💉 보스가 회복을 시도합니다!',
+        announce: '💉 보스에게서 회복의 기운이 느껴집니다!',
         counter: '방해',
-        wrongPenalty: 0, // 틀려도 패널티 없지만
+        wrongPenalty: 0,
         counterBonus: 1.0,
-        counterAttackMult: 1.5, // 방해 시 회복 차단 + 추가 피해
+        counterAttackMult: 1.5,
         special: 'blockHeal',
     },
     {
         id: 'charge',
-        announce: '⚡ 보스가 돌진을 준비합니다!',
+        announce: '⚡ 보스가 땅을 박차며 빠르게 돌진합니다!',
         counter: '회피',
         wrongPenalty: 2.0,
-        counterBonus: 0.0, // 회피 성공 시 피해 0
+        counterBonus: 0.0,
         counterAttackMult: 1.3,
     },
 ];
@@ -635,6 +646,18 @@ function raidTurn(user, session, statIn, action) {
     const dodgePct     = getEquipmentEffectValue(user, 'dodge');
     const regenPct     = getEquipmentEffectValue(user, 'regen');
     const guardPct     = getEquipmentEffectValue(user, 'guard') / 100;
+
+    // 턴 시작: debuff 틱 처리 (화상 등)
+    if (!session.bossDebuffs) session.bossDebuffs = [];
+    tickBossDebuffs(session, log);
+    if (session.bossHp <= 0) return { log, result: 'win' };
+
+    // 마력 자연 회복 (턴당 장비 보너스 + 기본 1)
+    const { regen: manaRegen } = calcManaFromEquip(user.equipment);
+    session.mana = Math.min(session.maxMana, (session.mana || 0) + 1 + manaRegen);
+
+    // 배리어 상태면 피해 감소
+    if (session.playerBarrier > 0) session.playerBarrier--;
 
     // 패턴 대응 판정
     const pattern = session.pendingPattern || null;
@@ -690,8 +713,14 @@ function raidTurn(user, session, statIn, action) {
     }
 
     // 플레이어 공격 (강공 액션 시 추가 배율)
-    const isCrit = skills.crit || Math.random() * 100 < critChance;
-    const effDef  = Math.max(0, boss.def * (1 - (skills.pierce ? 1 : piercePct)));
+    const isCrit = session.nextCritGuaranteed || skills.crit || Math.random() * 100 < critChance;
+    if (session.nextCritGuaranteed) session.nextCritGuaranteed = false;
+    // 디버프 적용: 저주(방어력 감소) / 관통 / 전기
+    const hasPierce100 = session.bossDebuffs.some(d => d.type === 'pierce100');
+    const hasElectrify = session.bossDebuffs.some(d => d.type === 'electrify');
+    const defDownPct   = session.bossDebuffs.filter(d => d.type === 'defDown').reduce((s,d) => s+d.value, 0) / 100;
+    const effDef = (hasPierce100 || hasElectrify) ? 0 :
+        Math.max(0, boss.def * (1 - piercePct - defDownPct) * (1 - (skills.pierce ? 1 : 0)));
     let atkStat = stat.atk * skills.atkMult * actionAtkMult;
     // 스킬북: 강철 의지
     const hasLastStand = (user.skills || []).includes('강철 의지');
@@ -741,22 +770,24 @@ function raidTurn(user, session, statIn, action) {
     }
 
     // 보스 공격 (회피 패턴 대응 성공 시 완전 회피)
-    if (forceEvade) {
+    const isFrozen = session.bossDebuffs.some(d => d.type === 'freeze');
+    const slowPct  = session.bossDebuffs.filter(d => d.type === 'slow').reduce((s,d) => s+d.value, 0) / 100;
+    if (isFrozen) {
+        log.push(`❄️ 빙결! 보스의 공격이 봉인되었습니다.`);
+    } else if (forceEvade) {
         log.push(`💨 완전 회피 성공!`);
     } else if (dodgePct > 0 && Math.random() * 100 < dodgePct) {
         log.push(`💨 회피 성공!`);
     } else {
-        const bossAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
+        const bossAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1) * (1 - slowPct));
         const damageReduction = guardPct + (1 - 1 / Math.max(1, skills.defMult));
         let bossDmg = Math.max(1, Math.floor(bossAtk * bossDmgMult * (1 - Math.min(0.8, damageReduction))));
         // 방어 자세
-        if (action === '방어') {
-            bossDmg = Math.floor(bossDmg * 0.6);
-            log.push(`🛡️ 방어 자세: 피해 40% 감소`);
-        }
+        if (action === '방어') { bossDmg = Math.floor(bossDmg * 0.6); log.push(`🛡️ 방어 자세: 피해 40% 감소`); }
+        // 배리어
+        if (session.playerBarrier > 0) { bossDmg = Math.floor(bossDmg * 0.5); log.push(`✨ 배리어: 피해 50% 감소`); }
         session.hp -= bossDmg;
         log.push(`👹 보스: ${bossDmg} 피해`);
-
         // 반격(가시)
         if (thornsPct > 0) {
             const thorns = Math.floor(bossAtk * thornsPct);
@@ -780,6 +811,131 @@ function raidTurn(user, session, statIn, action) {
 // ─────────────────────────────────────────────
 // Phase 5: 스킬북 시스템
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// 마력(MP) + 마법 시스템
+// ─────────────────────────────────────────────
+// 마법서 목록 — 10개 모이면 자동으로 다음 단계로 합성
+const MAGIC_BOOKS = [
+    // ── 화염 계열 ──────────────────────────────────────
+    { id: 'fireball',     name: '파이어볼',     tier: 1, element: '🔥', mana: 5,   dmgMult: 1.4, effect: null,          evolves: 'flame_burst',    desc: '화염 구체를 발사한다.', cost: { souls: 3,  gold: 200000 } },
+    { id: 'flame_burst',  name: '플레임 버스트', tier: 2, element: '🔥', mana: 12,  dmgMult: 1.9, effect: 'burn',        evolves: 'inferno',        desc: '화염이 폭발하며 화상을 입힌다. (2턴 추가 피해)', cost: { souls: 10, gold: 1000000 } },
+    { id: 'inferno',      name: '인페르노',      tier: 3, element: '🔥', mana: 25,  dmgMult: 3.0, effect: 'burn_heavy',  evolves: 'meteor',         desc: '대규모 화염 폭풍. 3턴간 강한 화상.', cost: { souls: 30, gold: 5000000 } },
+    { id: 'meteor',       name: '메테오',        tier: 4, element: '🔥', mana: 50,  dmgMult: 5.0, effect: 'stun',        evolves: null,             desc: '하늘에서 운석을 소환. 기절 30%.', cost: { souls: 80, gold: 20000000 } },
+    // ── 냉기 계열 ──────────────────────────────────────
+    { id: 'ice_shard',    name: '아이스 샤드',   tier: 1, element: '❄️', mana: 5,   dmgMult: 1.3, effect: 'slow',        evolves: 'blizzard',       desc: '얼음 파편으로 적의 속도를 낮춘다. (보스 공격력 -10%)', cost: { souls: 3,  gold: 200000 } },
+    { id: 'blizzard',     name: '블리자드',      tier: 2, element: '❄️', mana: 15,  dmgMult: 2.2, effect: 'freeze',      evolves: 'glacial_spike',  desc: '눈보라로 1턴 적을 얼린다. (다음 턴 보스 피해 무효)', cost: { souls: 12, gold: 1500000 } },
+    { id: 'glacial_spike',name: '글라시얼 스파이크', tier: 3, element: '❄️', mana: 30, dmgMult: 3.5, effect: 'freeze_heavy', evolves: 'absolute_zero', desc: '거대한 얼음 기둥으로 관통. 방어 무시.', cost: { souls: 40, gold: 8000000 } },
+    { id: 'absolute_zero',name: '절대영도',      tier: 4, element: '❄️', mana: 60,  dmgMult: 6.0, effect: 'full_freeze',  evolves: null,            desc: '모든 것을 얼린다. 2턴간 보스 공격 봉인.', cost: { souls: 100, gold: 40000000 } },
+    // ── 번개 계열 ──────────────────────────────────────
+    { id: 'lightning',    name: '라이트닝',      tier: 1, element: '⚡', mana: 6,   dmgMult: 1.5, effect: null,          evolves: 'chain_lightning',desc: '번개를 발사한다.', cost: { souls: 3,  gold: 200000 } },
+    { id: 'chain_lightning',name: '체인 라이트닝', tier: 2, element: '⚡', mana: 14, dmgMult: 2.0, effect: 'chain',       evolves: 'thunder_god',    desc: '번개가 연쇄 타격. 피해 1.2배 추가.', cost: { souls: 12, gold: 1500000 } },
+    { id: 'thunder_god',  name: '뇌신',          tier: 3, element: '⚡', mana: 28,  dmgMult: 3.8, effect: 'electrify',   evolves: 'judgment_bolt',  desc: '뇌신의 힘으로 강타. 3턴간 방어력 무시.', cost: { souls: 45, gold: 9000000 } },
+    { id: 'judgment_bolt',name: '심판의 벼락',   tier: 4, element: '⚡', mana: 55,  dmgMult: 5.5, effect: 'stun_heavy',  evolves: null,             desc: '하늘의 심판. 50% 확률 2턴 기절.', cost: { souls: 90, gold: 35000000 } },
+    // ── 어둠 계열 ──────────────────────────────────────
+    { id: 'shadow_bolt',  name: '쉐도우 볼트',   tier: 1, element: '🌑', mana: 7,   dmgMult: 1.6, effect: 'curse',       evolves: 'dark_nova',      desc: '어둠의 에너지. 저주로 보스 방어 -15%.', cost: { souls: 4,  gold: 300000 } },
+    { id: 'dark_nova',    name: '다크 노바',      tier: 2, element: '🌑', mana: 18,  dmgMult: 2.5, effect: 'curse_heavy', evolves: 'void_rift',      desc: '어둠이 폭발. 보스 방어 -30%.', cost: { souls: 15, gold: 2000000 } },
+    { id: 'void_rift',    name: '공허의 균열',   tier: 3, element: '🌑', mana: 35,  dmgMult: 4.2, effect: 'void',        evolves: 'annihilation',   desc: '공허를 열어 적을 빨아들인다. 방어 완전 무시.', cost: { souls: 60, gold: 15000000 } },
+    { id: 'annihilation', name: '소멸',           tier: 4, element: '🌑', mana: 70,  dmgMult: 7.0, effect: 'doom',        evolves: null,             desc: '존재 자체를 지운다. 현재 보스 HP의 15% 추가.', cost: { souls: 120, gold: 60000000 } },
+    // ── 신성 계열 ──────────────────────────────────────
+    { id: 'holy_light',   name: '홀리 라이트',   tier: 1, element: '✨', mana: 6,   dmgMult: 1.2, effect: 'heal_self',   evolves: 'divine_wrath',   desc: '신성한 빛으로 자신을 치유. +15% HP.', cost: { souls: 4,  gold: 300000 } },
+    { id: 'divine_wrath', name: '신성한 분노',   tier: 2, element: '✨', mana: 16,  dmgMult: 2.3, effect: 'smite',       evolves: 'archangel',      desc: '신의 분노로 타격. 크리티컬 50% 보장.', cost: { souls: 18, gold: 3000000 } },
+    { id: 'archangel',    name: '대천사',         tier: 3, element: '✨', mana: 38,  dmgMult: 4.0, effect: 'barrier',     evolves: 'divine_judgment',desc: '대천사 강림. 다음 2턴 피해 50% 방어.', cost: { souls: 70, gold: 18000000 } },
+    { id: 'divine_judgment',name: '신의 심판',  tier: 4, element: '✨', mana: 65,  dmgMult: 6.5, effect: 'holy_full',   evolves: null,             desc: '신의 심판. 광폭화한 보스에게 피해 2배.', cost: { souls: 110, gold: 50000000 } },
+];
+
+const MAGIC_EVOLUTION_CHAIN = {}; // id → evolves
+for (const m of MAGIC_BOOKS) {
+    if (m.evolves) MAGIC_EVOLUTION_CHAIN[m.id] = m.evolves;
+}
+
+function getMagicBook(id) { return MAGIC_BOOKS.find(m => m.id === id) || null; }
+
+// 마력(MP) 장비 옵션 합산
+function calcManaFromEquip(equipment) {
+    let mana = 0, regen = 0;
+    for (const slot of ['weapon','armor','shield','ring1','ring2']) {
+        const it = equipment && equipment[slot];
+        if (!it || it.broken) continue;
+        if (it.effect && it.effect.id === 'mana') mana += it.effect.value || 0;
+        if (it.effect && it.effect.id === 'manaRegen') regen += it.effect.value || 0;
+    }
+    return { mana: Math.round(mana), regen: Math.round(regen) };
+}
+
+// 최대 마력 계산 (기본 20 + 스킬/장비 보너스)
+function calcMaxMana(user) {
+    const BASE_MANA = 20;
+    const { mana } = calcManaFromEquip(user.equipment);
+    const skillMana = (user.skills || []).reduce((s, sk) => {
+        const b = MAGIC_BOOKS.find(m => m.id === sk); // 마법 id를 skills에 저장
+        return s; // 마법은 spells 배열에 별도 저장
+    }, 0);
+    return BASE_MANA + mana;
+}
+
+// 마법 효과 적용 (레이드 턴 내)
+function applyMagicEffect(spell, session, log) {
+    if (!spell.effect) return;
+    switch (spell.effect) {
+        case 'burn':       session.bossDebuffs.push({ type: 'burn', turns: 2, value: 5 });  log.push('🔥 화상 상태 (2턴)'); break;
+        case 'burn_heavy': session.bossDebuffs.push({ type: 'burn', turns: 3, value: 12 }); log.push('🔥🔥 강화 화상 (3턴)'); break;
+        case 'slow':       session.bossDebuffs.push({ type: 'slow', turns: 2, value: 10 }); log.push('❄️ 감속 (2턴, 보스 공격력 -10%)'); break;
+        case 'freeze':     session.bossDebuffs.push({ type: 'freeze', turns: 1, value: 0 }); log.push('❄️ 빙결 (1턴 공격 봉인)'); break;
+        case 'freeze_heavy': session.bossDebuffs.push({ type: 'freeze', turns: 2, value: 0 }); log.push('❄️❄️ 강화 빙결 (2턴 공격 봉인)'); break;
+        case 'full_freeze':  session.bossDebuffs.push({ type: 'freeze', turns: 2, value: 0 }); log.push('❄️ 절대 빙결 (2턴 완전 봉인)'); break;
+        case 'chain':      log.push('⚡ 연쇄 번개 추가 타격'); break;
+        case 'electrify':  session.bossDebuffs.push({ type: 'electrify', turns: 3, value: 1 }); log.push('⚡ 감전 (3턴 방어 무시)'); break;
+        case 'stun':       if (Math.random() < 0.3) { session.bossDebuffs.push({ type: 'freeze', turns: 1, value: 0 }); log.push('💫 기절!'); } break;
+        case 'stun_heavy': if (Math.random() < 0.5) { session.bossDebuffs.push({ type: 'freeze', turns: 2, value: 0 }); log.push('💫💫 강화 기절 (2턴)!'); } break;
+        case 'curse':      session.bossDebuffs.push({ type: 'defDown', turns: 2, value: 15 }); log.push('🌑 저주 (방어력 -15%, 2턴)'); break;
+        case 'curse_heavy':session.bossDebuffs.push({ type: 'defDown', turns: 3, value: 30 }); log.push('🌑🌑 강화 저주 (방어력 -30%, 3턴)'); break;
+        case 'void':       session.bossDebuffs.push({ type: 'pierce100', turns: 2, value: 0 }); log.push('🌑 공허 (2턴 방어 완전 무시)'); break;
+        case 'doom':       break; // dmgMult에 추가 처리
+        case 'heal_self':  { const h = Math.floor(session.maxHp * 0.15); session.hp = Math.min(session.maxHp, session.hp + h); log.push(`✨ 치유: +${h} HP`); break; }
+        case 'smite':      session.nextCritGuaranteed = true; log.push('✨ 다음 공격 크리티컬 보장'); break;
+        case 'barrier':    session.playerBarrier = 2; log.push('✨ 방어 장벽 (2턴 피해 50% 감소)'); break;
+        case 'holy_full':  if (session.enraged) { log.push('✨ 광폭화 대상 → 피해 2배 적용!'); } break;
+    }
+}
+
+// debuff 틱 처리
+function tickBossDebuffs(session, log) {
+    if (!session.bossDebuffs) session.bossDebuffs = [];
+    const keep = [];
+    for (const d of session.bossDebuffs) {
+        d.turns--;
+        if (d.type === 'burn') {
+            const tick = Math.floor(session.boss.maxHp * d.value / 100);
+            session.bossHp = Math.max(0, session.bossHp - tick);
+            log.push(`🔥 화상 피해: ${tick}`);
+        }
+        if (d.turns > 0) keep.push(d);
+    }
+    session.bossDebuffs = keep;
+}
+
+// 마법 합성 체크 — spells 배열에서 id가 10개 이상이면 evolve
+function checkMagicEvolution(user) {
+    const msgs = [];
+    for (const [baseId, evolveId] of Object.entries(MAGIC_EVOLUTION_CHAIN)) {
+        const count = (user.spells || []).filter(id => id === baseId).length;
+        if (count >= 10) {
+            const removeCount = Math.floor(count / 10) * 10;
+            let removed = 0;
+            user.spells = (user.spells || []).filter(id => {
+                if (id === baseId && removed < removeCount) { removed++; return false; }
+                return true;
+            });
+            const gained = Math.floor(count / 10);
+            for (let i = 0; i < gained; i++) user.spells.push(evolveId);
+            const base = getMagicBook(baseId);
+            const next = getMagicBook(evolveId);
+            if (base && next) msgs.push(`🌟 합성! ${base.name} × ${removeCount} → ${next.name} × ${gained}`);
+        }
+    }
+    return msgs;
+}
+
 const SKILL_BOOKS = {
     // 공격계열
     'A급 검술':         { grade: '고급', type: 'passive', stat: 'atk', value: 10, desc: '기본 공격력 +10 (영구)', cost: { souls: 5,  gold: 500000 } },
@@ -1127,6 +1283,8 @@ function createDefaultUser() {
         equipment: { weapon: null, armor: null, shield: null, ring1: null, ring2: null },
         equipmentInventory: [], // 보유 장비 (미장착) 목록
         skills: [],          // 학습한 스킬 목록
+        spells: [],          // 보유 마법 ID 목록 (중복 허용, 10개 합성)
+        mana: 20,            // 현재 마력 (레이드 시작 시 maxMana로 충전)
         huntCount: 0,        // 사냥 횟수
         huntWins: 0,         // 사냥 성공
         bossKills: {},       // { '킹슬라임': N, ... } 보스별 처치 횟수
@@ -1218,6 +1376,8 @@ function ensureUser(db, name) {
     if (!u.firstBossClears || typeof u.firstBossClears !== 'object') u.firstBossClears = {};
     if (typeof u.lastHuntAt !== 'number') u.lastHuntAt = 0;
     if (typeof u.lastRaidAt !== 'number') u.lastRaidAt = 0;
+    if (!Array.isArray(u.spells)) u.spells = [];
+    if (typeof u.mana !== 'number' || isNaN(u.mana)) u.mana = 20;
     // 파티원 데이터 정규화
     for (const k of Object.keys(u.partyMembers)) {
         const v = u.partyMembers[k];
@@ -1902,6 +2062,24 @@ server.on('message', (msg, rinfo) => {
             return reply(`🛡️ [장비 지급] ${args[0]}에게 ${grade} ${args[1]} x${qty} 지급 완료 (인벤토리 확인: !장비인벤)`);
         }
 
+        if (cmd === '!관리자마법지급') {
+            if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
+            if (args.length < 2) return reply('❌ !관리자마법지급 [닉네임] [마법ID] [수량(기본1)]\n예) !관리자마법지급 홍길동 fireball 10');
+            const target = ensureUser(db, args[0]);
+            const spellId = args[1];
+            const mb = getMagicBook(spellId);
+            if (!mb) return reply(`❌ 마법 ID 오류: ${spellId}\n(ID 목록: ${MAGIC_BOOKS.map(m=>m.id).join(', ')})`);
+            const qty = parseInt(args[2] || '1', 10);
+            if (isNaN(qty) || qty < 1) return reply('❌ 수량 오류');
+            if (!target.spells) target.spells = [];
+            for (let i = 0; i < qty; i++) target.spells.push(spellId);
+            const evolMsgs = checkMagicEvolution(target);
+            saveData(db);
+            let msg = `🔮 [마법 지급] ${args[0]}에게 ${mb.element}${mb.name} × ${qty} 지급`;
+            if (evolMsgs.length) msg += '\n' + evolMsgs.join('\n');
+            return reply(msg);
+        }
+
         if (cmd === '!관리자아이템지급') {
             if (!ADMIN_NAMES.includes(sender)) return reply('❌ 권한 없음');
             // !관리자아이템지급 [닉네임] [아이템타입] [수량]
@@ -2018,10 +2196,13 @@ server.on('message', (msg, rinfo) => {
                 ' 💡 보스 예고 패턴에 맞는 액션 → 보너스\n' +
                 ' ⏱️ 1분 이내 행동 없으면 자동 후퇴\n' +
                 ' ⚠️ 패배 시 장착 장비 1개 랜덤 파손\n\n' +
-                '📖 [스킬북]\n' +
-                ' !스킬목록 — 구매 가능한 스킬 확인\n' +
-                ' !내스킬 — 습득한 스킬 목록\n' +
-                ' !스킬습득 [스킬이름] — 소울+골드로 구매\n\n' +
+                '📖 [스킬/마법]\n' +
+                ' !스킬목록 / !내스킬 / !스킬습득 [이름]\n' +
+                ' !마법목록 — 구매 가능한 마법 전체 확인\n' +
+                ' !내마법 — 보유 마법 + 현재 마력\n' +
+                ' !마법구매 [마법이름] — 소울+골드 구매\n' +
+                ' !마법합성 — 같은 마법 10개→상위 마법\n' +
+                ' 🔮 사냥터 귀환/레이드 클리어 시 25% 확률 드랍\n\n' +
                 '🌌 [시즌]\n' +
                 ' !시즌정보 — 시즌 보상/기간 확인\n\n' +
                 '💡 [금액 입력]\n' +
@@ -2601,8 +2782,13 @@ server.on('message', (msg, rinfo) => {
             for (const [box, cnt] of Object.entries(loot.boxes)) {
                 user.boxes[box] = (user.boxes[box] || 0) + cnt;
             }
+            if (loot.spells && loot.spells.length > 0) {
+                if (!user.spells) user.spells = [];
+                for (const spId of loot.spells) user.spells.push(spId);
+            }
             user.huntWins = (user.huntWins || 0) + 1;
             user.huntCount = (user.huntCount || 0) + 1;
+            const evolMsgs = checkMagicEvolution(user);
             saveData(db);
 
             let msg = `🏕️ [사냥 귀환] ${hs.ground.name} — ${cappedMin}분\n─────────────────────\n`;
@@ -2612,6 +2798,16 @@ server.on('message', (msg, rinfo) => {
             if (Object.keys(loot.boxes).length > 0) {
                 msg += `📦 상자:\n`;
                 for (const [box, cnt] of Object.entries(loot.boxes)) msg += `   ${box} x${cnt}\n`;
+            }
+            if (loot.spells && loot.spells.length > 0) {
+                msg += `🔮 마법서:\n`;
+                const spellCounts = {};
+                for (const spId of loot.spells) spellCounts[spId] = (spellCounts[spId]||0)+1;
+                for (const [spId, cnt] of Object.entries(spellCounts)) {
+                    const mb = getMagicBook(spId);
+                    if (mb) msg += `   ${mb.element}${mb.name} × ${cnt}\n`;
+                }
+                if (evolMsgs.length) msg += evolMsgs.join('\n') + '\n';
             }
             if (elapsedMin > 480) msg += `⏰ 최대 8시간 초과분은 소멸됩니다.\n`;
             msg += `─────────────────────\n잔액: ${formatKRW(user.points)} / 강화석: ${(user.stones||0).toLocaleString()}개`;
@@ -2663,6 +2859,75 @@ server.on('message', (msg, rinfo) => {
                 `${sk.desc}\n소모: 소울 ${sk.cost.souls}개 / ${formatKRW(sk.cost.gold)}\n` +
                 `남은 소울: ${user.souls}개\n잔액: ${formatKRW(user.points)}`
             );
+        }
+
+        // ══════════════════════════════════════════════
+        // 마법 시스템
+        // ══════════════════════════════════════════════
+        if (cmd === '!마법목록') {
+            const maxMana = calcMaxMana(user);
+            let m = `🔮 [마법서 목록] (현재 마력: ${user.mana||0}/${maxMana})\n`;
+            m += `─────────────────────\n`;
+            const elements = ['🔥','❄️','⚡','🌑','✨'];
+            const shown = new Set();
+            for (const el of elements) {
+                const group = MAGIC_BOOKS.filter(mb => mb.element === el);
+                m += `\n${el} `;
+                for (const mb of group) {
+                    const owned = (user.spells||[]).filter(id => id === mb.id).length;
+                    const canCast = maxMana >= mb.mana ? '' : ' 🔒';
+                    const ownedStr = owned > 0 ? ` (보유:${owned})` : '';
+                    m += `\n[Tier${mb.tier}] ${mb.name}${canCast}${ownedStr}\n`;
+                    m += `   마력 ${mb.mana} / 피해배율 ${mb.dmgMult}x / ${mb.desc}\n`;
+                    m += `   소울 ${mb.cost.souls}개 / ${formatKRW(mb.cost.gold)}\n`;
+                    if (mb.evolves) { const next = getMagicBook(mb.evolves); if (next) m += `   ✨ 10개 합성 → ${next.name}\n`; }
+                }
+            }
+            m += `─────────────────────\n!마법구매 [마법이름] — 구매 / !내마법 — 보유 목록`;
+            return reply(m);
+        }
+
+        if (cmd === '!내마법') {
+            const spells = user.spells || [];
+            const maxMana = calcMaxMana(user);
+            if (spells.length === 0) return reply(`🔮 보유한 마법이 없습니다.\n!마법목록 에서 구매하거나 사냥/레이드 드랍 노려보세요.\n현재 마력: ${user.mana||0}/${maxMana}`);
+            const counts = {};
+            for (const id of spells) counts[id] = (counts[id] || 0) + 1;
+            let m = `🔮 [${sender}님의 마법] 마력: ${user.mana||0}/${maxMana}\n─────────────────────\n`;
+            for (const [id, cnt] of Object.entries(counts)) {
+                const mb = getMagicBook(id);
+                if (!mb) continue;
+                m += `${mb.element}[Tier${mb.tier}] ${mb.name} × ${cnt}\n`;
+                m += `   마력 ${mb.mana} / ${mb.dmgMult}x / ${mb.desc}\n`;
+                if (mb.evolves && cnt >= 10) { const next = getMagicBook(mb.evolves); if (next) m += `   🌟 10개 → !마법합성 으로 ${next.name} 합성 가능\n`; }
+                else if (mb.evolves) { const next = getMagicBook(mb.evolves); if (next) m += `   ✨ ${10-cnt}개 더 모으면 ${next.name} 합성\n`; }
+            }
+            return reply(m);
+        }
+
+        if (cmd === '!마법구매') {
+            if (args.length < 1) return reply('❌ !마법구매 [마법이름]');
+            const mbName = args.join(' ');
+            const mb = MAGIC_BOOKS.find(m => m.name === mbName);
+            if (!mb) return reply(`❌ 존재하지 않는 마법: ${mbName}\n!마법목록 참고`);
+            if ((user.souls || 0) < mb.cost.souls) return reply(`❌ 소울 부족 (필요: ${mb.cost.souls}개, 보유: ${user.souls||0}개)`);
+            if (user.points < mb.cost.gold) return reply(`❌ 골드 부족 (필요: ${formatKRW(mb.cost.gold)})`);
+            user.souls  -= mb.cost.souls;
+            user.points -= mb.cost.gold;
+            if (!user.spells) user.spells = [];
+            user.spells.push(mb.id);
+            const evolMsgs = checkMagicEvolution(user);
+            saveData(db);
+            let msg = `🔮 [마법서 구매] ${mb.element}${mb.name}\n${mb.desc}\n소모: 소울 ${mb.cost.souls}개 / ${formatKRW(mb.cost.gold)}\n남은 소울: ${user.souls}개`;
+            if (evolMsgs.length) msg += '\n' + evolMsgs.join('\n');
+            return reply(msg);
+        }
+
+        if (cmd === '!마법합성') {
+            const evolMsgs = checkMagicEvolution(user);
+            if (evolMsgs.length === 0) return reply('❌ 합성 가능한 마법이 없습니다. (같은 마법 10개 필요)');
+            saveData(db);
+            return reply(`🌟 [마법 합성 완료]\n${evolMsgs.join('\n')}`);
         }
 
         // ══════════════════════════════════════════════
@@ -2812,6 +3077,7 @@ server.on('message', (msg, rinfo) => {
             }
 
             const sessionKey = `${room}:${sender}`;
+            const maxMana = calcMaxMana(user);
             raidSessions[sessionKey] = {
                 boss,
                 bossHp: boss.maxHp,
@@ -2825,6 +3091,11 @@ server.on('message', (msg, rinfo) => {
                 startedAt: Date.now(),
                 lastActionAt: Date.now(),
                 pendingPattern: null,
+                mana: maxMana,
+                maxMana,
+                bossDebuffs: [],    // { type, turns, value }
+                playerBarrier: 0,   // 남은 배리어 턴
+                nextCritGuaranteed: false,
             };
 
             let m = `⚔️ [레이드 시작] ${EQUIP_GRADE_EMOJI[boss.grade]||''}${boss.name}\n`;
@@ -2844,13 +3115,14 @@ server.on('message', (msg, rinfo) => {
             m += `!방어 — 이번 턴 피해 40% 감소\n`;
             m += `!회피 — 이번 턴 피해 무력화 시도\n`;
             m += `!방해 — 보스 회복/버프 차단\n`;
+            m += `!마법 — 마법 시전 (마력 ${session.mana||0}/${session.maxMana||20}) 자동 최강 선택\n`;
             m += `!후퇴 — 레이드 포기\n`;
             m += `💡 보스 예고 패턴에 맞는 액션을 선택하면 보너스!`;
             return reply(m);
         }
 
         // 레이드 중 행동 명령어 (확장: !공격 !강공 !방어 !회피 !방해 !후퇴)
-        if (['!공격','!강공','!방어','!회피','!방해','!후퇴'].includes(cmd)) {
+        if (['!공격','!강공','!방어','!회피','!방해','!마법','!후퇴'].includes(cmd)) {
             const sessionKey = `${room}:${sender}`;
             const session = raidSessions[sessionKey];
 
@@ -2872,6 +3144,85 @@ server.on('message', (msg, rinfo) => {
             session.lastActionAt = Date.now();
 
             // 행동 → 내부 액션 문자열
+            // 마법 사용 처리
+            if (cmd === '!마법') {
+                const spells = user.spells || [];
+                if (spells.length === 0) return reply('❌ 보유한 마법이 없습니다.\n!마법목록 으로 구매하거나 사냥/레이드에서 드랍을 노려보세요.');
+                // 현재 마력으로 시전 가능한 마법 중 가장 강한 것 자동 선택
+                const usable = spells
+                    .map(id => getMagicBook(id))
+                    .filter(m => m && (session.mana || 0) >= m.mana)
+                    .sort((a, b) => b.mana - a.mana);
+                if (usable.length === 0) {
+                    return reply(`❌ 마력 부족! (보유: ${session.mana}/${session.maxMana})\n마력은 매 턴 1씩 회복됩니다.`);
+                }
+                const spell = usable[0];
+                // 인벤에서 1개 소모
+                const idx = user.spells.indexOf(spell.id);
+                user.spells.splice(idx, 1);
+                session.mana -= spell.mana;
+                // 마법 피해 계산 (공격력 × 배율)
+                const turnStat2 = { ...session.stat };
+                const magicDmg = Math.floor(turnStat2.atk * spell.dmgMult);
+                // 소멸(doom) — 현재 보스 HP의 15% 추가
+                const doomBonus = spell.effect === 'doom' ? Math.floor(session.bossHp * 0.15) : 0;
+                // 신의 심판 — 광폭화 시 2배
+                const holyMult = (spell.effect === 'holy_full' && session.enraged) ? 2 : 1;
+                const totalSpellDmg = (magicDmg + doomBonus) * holyMult;
+                session.bossHp = Math.max(0, session.bossHp - totalSpellDmg);
+                const spellLog = [`${spell.element} [${spell.name}] 시전! ${totalSpellDmg} 마법 피해${doomBonus>0?' (+소멸 추가)':''}${holyMult>1?' (광폭화 2배)':''}`];
+                applyMagicEffect(spell, session, spellLog);
+                if (session.bossHp <= 0) {
+                    saveData(db);
+                    user.bossKills = user.bossKills || {};
+                    user.bossKills[session.boss.name] = (user.bossKills[session.boss.name] || 0) + 1;
+                    user.points  += session.boss.gold;
+                    user.stones   = (user.stones || 0) + session.boss.stones;
+                    user.souls    = (user.souls  || 0) + session.boss.souls;
+                    const evolMsgs = checkMagicEvolution(user);
+                    saveData(db);
+                    delete raidSessions[`${room}:${sender}`];
+                    let m = `${spell.element} [${spell.name}] 시전!\n`;
+                    m += spellLog.join('\n') + '\n';
+                    m += `─────────────────────\n`;
+                    m += `👹 ${session.boss.name}\n${hpBar(0, session.boss.maxHp, session.enraged)}\n`;
+                    m += `\n🎉🎊 [${session.boss.name} 처치!]\n`;
+                    m += `보상: 골드 +${formatKRW(session.boss.gold)} / 강화석 +${session.boss.stones} / 소울 +${session.boss.souls}\n`;
+                    m += `누적 처치: ${user.bossKills[session.boss.name]}회`;
+                    if (evolMsgs.length) m += '\n' + evolMsgs.join('\n');
+                    return reply(m);
+                }
+                // 보스 반격 (마법 사용 턴은 방어 없음)
+                const bossAtk2 = Math.floor(session.boss.atk * (session.enraged ? session.boss.enrageAtkMult : 1));
+                const isFrozen2 = session.bossDebuffs.some(d => d.type === 'freeze');
+                if (!isFrozen2) {
+                    session.hp -= bossAtk2;
+                    spellLog.push(`👹 보스: ${bossAtk2} 피해`);
+                } else {
+                    spellLog.push(`❄️ 빙결! 보스 공격 봉인`);
+                }
+                const nextPat = Math.random() < 0.35 ? rollBossPattern() : null;
+                if (nextPat) { session.pendingPattern = nextPat; spellLog.push(`\n⚠️ ${nextPat.announce}`); }
+                session.turn++;
+                session.lastActionAt = Date.now();
+                const evolMsgsM = checkMagicEvolution(user);
+                saveData(db);
+                if (session.hp <= 0) {
+                    const equipped = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && !user.equipment[s].broken);
+                    if (equipped.length > 0) { const sl = equipped[Math.floor(Math.random()*equipped.length)]; user.equipment[sl].broken = true; spellLog.push(`💥 패널티: "${user.equipment[sl].name}" 파손!`); }
+                    delete raidSessions[`${room}:${sender}`]; saveData(db);
+                }
+                let m = `${spell.element} [마법: ${spell.name}] 턴 ${session.turn}\n─────────────────────\n`;
+                m += spellLog.join('\n') + '\n';
+                m += `─────────────────────\n`;
+                m += `👹 ${session.boss.name}${session.enraged?' 💢':''}\n${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n`;
+                m += `❤️ 내 HP\n${hpBar(Math.max(0,session.hp), session.maxHp)}\n`;
+                m += `💧 마력: ${session.mana}/${session.maxMana}\n`;
+                if (evolMsgsM.length) m += evolMsgsM.join('\n') + '\n';
+                m += session.hp <= 0 ? '\n💀 [전투 패배]' : `\n👉 !공격 !강공 !방어 !회피 !방해 !마법 !후퇴  (⏱️ 1분)`;
+                return reply(m);
+            }
+
             const actionMap = { '!공격': '공격', '!강공': '강공', '!방어': '방어', '!회피': '회피', '!방해': '방해' };
             const action = actionMap[cmd] || '공격';
 
@@ -2889,6 +3240,7 @@ server.on('message', (msg, rinfo) => {
             m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n`;
             m += `❤️ 내 HP\n`;
             m += `${hpBar(session.hp, session.maxHp)}\n`;
+            m += `💧 마력: ${session.mana||0}/${session.maxMana||20}\n`;
 
             if (result === 'win') {
                 delete raidSessions[sessionKey];
@@ -2897,9 +3249,20 @@ server.on('message', (msg, rinfo) => {
                 user.points  += session.boss.gold;
                 user.stones   = (user.stones || 0) + session.boss.stones;
                 user.souls    = (user.souls  || 0) + session.boss.souls;
+                // 레이드 보스 등급에 따른 마법서 드랍 (25% 확률)
+                let raidSpellDrop = null;
+                if (Math.random() < 0.25) {
+                    const bossGradeIdx = EQUIP_GRADES.indexOf(session.boss.grade);
+                    const spellTier = Math.min(4, Math.max(1, Math.ceil((bossGradeIdx + 1) / 2)));
+                    const spellId = rollSpellDrop(spellTier);
+                    if (spellId) { if (!user.spells) user.spells = []; user.spells.push(spellId); raidSpellDrop = getMagicBook(spellId); }
+                }
+                const evolMsgsR = checkMagicEvolution(user);
                 saveData(db);
                 m += `\n🎉🎊 [${session.boss.name} 처치!]\n`;
                 m += `보상: 골드 +${formatKRW(session.boss.gold)} / 강화석 +${session.boss.stones} / 소울 +${session.boss.souls}\n`;
+                if (raidSpellDrop) m += `🔮 마법서 드랍: ${raidSpellDrop.element}${raidSpellDrop.name} (Tier${raidSpellDrop.tier})\n`;
+                if (evolMsgsR.length) m += evolMsgsR.join('\n') + '\n';
                 m += `누적 처치: ${user.bossKills[session.boss.name]}회`;
             } else if (result === 'lose') {
                 delete raidSessions[sessionKey];
@@ -2915,13 +3278,11 @@ server.on('message', (msg, rinfo) => {
                 if (brokenName) m += `💥 패널티: "${brokenName}" 이(가) 파손!\n!장비수리 로 복구하세요.`;
                 else m += `(장착 장비 없음 — 패널티 없음)`;
             } else {
-                // 다음 턴 가능한 액션 안내
                 if (session.pendingPattern) {
-                    m += `\n👉 대응: !${session.pendingPattern.counter} (또는 !공격/!방어/!회피/!방해/!강공)`;
+                    m += `\n👉 !공격 !강공 !방어 !회피 !방해 !마법 !후퇴  (⏱️ 1분)`;
                 } else {
-                    m += `\n👉 !공격 !강공 !방어 !회피 !방해 !후퇴`;
+                    m += `\n👉 !공격 !강공 !방어 !회피 !방해 !마법 !후퇴  (⏱️ 1분)`;
                 }
-                m += `  (⏱️ 1분 내 입력 없으면 자동 후퇴)`;
             }
             return reply(m);
         }
@@ -2946,8 +3307,8 @@ server.on('message', (msg, rinfo) => {
             m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n`;
             m += `❤️ 내 HP\n`;
             m += `${hpBar(session.hp, session.maxHp)}${timeoutWarn}\n`;
-            if (session.pendingPattern) m += `⚠️ 예고: ${session.pendingPattern.announce}\n`;
-            m += `!공격 !강공 !방어 !회피 !방해 !후퇴`;
+            if (session.pendingPattern) m += `⚠️ ${session.pendingPattern.announce}\n`;
+            m += `!공격 !강공 !방어 !회피 !방해 !마법 !후퇴`;
             return reply(m);
         }
 
@@ -2965,6 +3326,14 @@ server.on('message', (msg, rinfo) => {
             msg += `💰 골드: ${formatKRW(user.points)}\n`;
             msg += `💎 강화석: ${(user.stones||0).toLocaleString()}개\n`;
             msg += `🌌 소울: ${(user.souls||0).toLocaleString()}개\n`;
+            msg += `💧 마력: ${calcMaxMana(user)} (장비 보너스 +${calcManaFromEquip(user.equipment).mana})\n`;
+            msg += `━━━━━━━━━━━━━━━━━━━━\n`;
+            const spellCount = (user.spells||[]).length;
+            if (spellCount > 0) {
+                const counts = {};
+                for (const id of user.spells) counts[id] = (counts[id]||0)+1;
+                msg += `🔮 마법: ${Object.entries(counts).map(([id,c]) => { const m=getMagicBook(id); return m?`${m.element}${m.name}×${c}`:`?×${c}`; }).join(' ')}\n`;
+            }
             msg += `━━━━━━━━━━━━━━━━━━━━\n`;
             const eq = user.equipment || {};
             let hasEq = false;
