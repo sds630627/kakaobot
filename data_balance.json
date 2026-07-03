@@ -46,7 +46,7 @@
     { "id": "guard",     "label": "철벽",         "appliesTo": ["shield"],                 "baseVal": 3,  "perGrade": 2   },
     { "id": "proc",      "label": "용병 발동률",  "appliesTo": ["ring"],                   "baseVal": 2,  "perGrade": 1.5 },
     { "id": "mana",      "label": "마력",         "appliesTo": ["weapon","armor","ring"],  "baseVal": 5,  "perGrade": 8   },
-    { "id": "manaRegen", "label": "마력회복",     "appliesTo": ["ring","armor"],           "baseVal": 1,  "perGrade": 0.5 }
+    { "id": "manaRegen", "label": "마력회복",     "appliesTo": ["ring","armor"],           "baseVal": 1,  "perGrade": 2 }
   ],
 
   "mercenaryBonusRate": 0.01,
