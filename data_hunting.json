@@ -1,0 +1,50 @@
+{
+  "_comment": "사냥터 목록 — GitHub에서 수정 후 커밋하면 자동 반영",
+  "grounds": [
+    { "name": "뒷산",        "grade": "초급", "recommendedPower": 100,    "minPower": 30,    "goldMin": 1500,    "goldMax": 6000,    "stoneMin": 2,   "stoneMax": 6,    "lootExtra": [
+      { "type": "box",   "name": "초급장비상자", "chance": 3 },
+      { "type": "box",   "name": "초급용병상자", "chance": 2 },
+      { "type": "spell", "tier": 1,              "chance": 5 }
+    ]},
+    { "name": "어두운 숲",   "grade": "중급", "recommendedPower": 400,    "minPower": 150,   "goldMin": 6000,    "goldMax": 24000,   "stoneMin": 5,   "stoneMax": 15,   "lootExtra": [
+      { "type": "box",   "name": "중급장비상자", "chance": 2 },
+      { "type": "box",   "name": "중급용병상자", "chance": 1 },
+      { "type": "spell", "tier": 1,              "chance": 8 }
+    ]},
+    { "name": "폐광",        "grade": "고급", "recommendedPower": 1500,   "minPower": 600,   "goldMin": 25000,   "goldMax": 90000,   "stoneMin": 15,  "stoneMax": 45,   "lootExtra": [
+      { "type": "box",    "name": "고급장비상자", "chance": 2 },
+      { "type": "box",    "name": "중급용병상자", "chance": 3 },
+      { "type": "stones", "amount": [5,15],        "chance": 20 },
+      { "type": "spell",  "tier": 1,               "chance": 10 },
+      { "type": "spell",  "tier": 2,               "chance": 3 }
+    ]},
+    { "name": "얼음 동굴",   "grade": "영웅", "recommendedPower": 6000,   "minPower": 2500,  "goldMin": 90000,   "goldMax": 360000,  "stoneMin": 35,  "stoneMax": 100,  "lootExtra": [
+      { "type": "box",    "name": "영웅장비상자", "chance": 1 },
+      { "type": "box",    "name": "고급용병상자", "chance": 2 },
+      { "type": "stones", "amount": [10,30],       "chance": 30 },
+      { "type": "spell",  "tier": 2,               "chance": 5 }
+    ]},
+    { "name": "용의 둥지",   "grade": "전설", "recommendedPower": 25000,  "minPower": 10000, "goldMin": 360000,  "goldMax": 1500000, "stoneMin": 90,  "stoneMax": 280,  "lootExtra": [
+      { "type": "box",    "name": "전설장비상자", "chance": 1 },
+      { "type": "box",    "name": "영웅용병상자", "chance": 1 },
+      { "type": "stones", "amount": [20,60],       "chance": 40 },
+      { "type": "souls",  "amount": [1,3],          "chance": 10 },
+      { "type": "spell",  "tier": 2,               "chance": 8 },
+      { "type": "spell",  "tier": 3,               "chance": 2 }
+    ]},
+    { "name": "천공의 섬",   "grade": "신화", "recommendedPower": 100000, "minPower": 40000, "goldMin": 1500000, "goldMax": 6000000, "stoneMin": 250, "stoneMax": 750,  "lootExtra": [
+      { "type": "box",    "name": "신화장비상자", "chance": 1 },
+      { "type": "box",    "name": "전설용병상자", "chance": 1 },
+      { "type": "stones", "amount": [50,150],      "chance": 50 },
+      { "type": "souls",  "amount": [2,8],          "chance": 15 },
+      { "type": "spell",  "tier": 3,               "chance": 4 }
+    ]},
+    { "name": "혼돈의 균열", "grade": "태초", "recommendedPower": 500000, "minPower": 200000,"goldMin": 6000000, "goldMax": 24000000,"stoneMin": 600, "stoneMax": 1800, "lootExtra": [
+      { "type": "box",    "name": "신화용병상자", "chance": 1 },
+      { "type": "stones", "amount": [100,300],     "chance": 60 },
+      { "type": "souls",  "amount": [5,20],         "chance": 20 },
+      { "type": "spell",  "tier": 3,               "chance": 6 },
+      { "type": "spell",  "tier": 4,               "chance": 1 }
+    ]}
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "_comment": "밸런스 수치 — GitHub에서 직접 수정 후 커밋하면 1분 안에 자동 반영",
+
+  "enhance": {
+    "successRate": [70, 60, 50, 40, 35, 28, 22, 16, 10, 5],
+    "destroyStartLevel": 7,
+    "destroyRate": { "7": 20, "8": 35, "9": 50, "10": 70 },
+    "goldBase": {
+      "초급": 5000, "중급": 20000, "고급": 80000, "영웅": 300000,
+      "전설": 1200000, "신화": 5000000, "태초": 20000000
+    },
+    "stoneBase": {
+      "초급": 5, "중급": 10, "고급": 20, "영웅": 40,
+      "전설": 80, "신화": 150, "태초": 300
+    }
+  },
+
+  "equipment": {
+    "weaponAtk":  { "초급": 5,  "중급": 15, "고급": 35, "영웅": 80,  "전설": 150, "신화": 280, "태초": 500 },
+    "armorDef":   { "초급": 3,  "중급": 8,  "고급": 20, "영웅": 45,  "전설": 80,  "신화": 130, "태초": 200 },
+    "armorHp":    { "초급": 30, "중급": 80, "고급": 180,"영웅": 350, "전설": 550, "신화": 780, "태초": 1000 },
+    "shieldDef":  { "초급": 5,  "중급": 15, "고급": 35, "영웅": 70,  "전설": 130, "신화": 200, "태초": 300 },
+    "ringBudget": { "초급": 4,  "중급": 10, "고급": 25, "영웅": 55,  "전설": 100, "신화": 180, "태초": 320 },
+    "sellPrice":  { "초급": 2000,"중급": 8000,"고급": 30000,"영웅": 100000,"전설": 400000,"신화": 1500000,"태초": 6000000 },
+    "repairCost": { "초급": 3000,"중급": 12000,"고급": 50000,"영웅": 200000,"전설": 800000,"신화": 3000000,"태초": 12000000 },
+    "shopPrice": {
+      "weapon": { "초급": 1000,  "중급": 50000,  "고급": 500000,  "영웅": 5000000,  "전설": 50000000,  "신화": 500000000 },
+      "armor":  { "초급": 1000,  "중급": 50000,  "고급": 500000,  "영웅": 5000000,  "전설": 50000000,  "신화": 500000000 },
+      "shield": { "초급": 2000,  "중급": 80000,  "고급": 800000,  "영웅": 8000000,  "전설": 80000000,  "신화": 800000000 },
+      "ring":   { "초급": 3000,  "중급": 120000, "고급": 1200000, "영웅": 12000000, "전설": 120000000, "신화": 1200000000 }
+    },
+    "enhanceStat": 0.15,
+    "ringSingleChance": 0.35,
+    "effectAttachChance": 0.4
+  },
+
+  "effectPool": [
+    { "id": "crit",      "label": "치명타 확률",  "appliesTo": ["weapon","ring"],          "baseVal": 2,  "perGrade": 1.2 },
+    { "id": "critdmg",   "label": "치명타 피해",  "appliesTo": ["weapon","ring"],          "baseVal": 8,  "perGrade": 5   },
+    { "id": "pierce",    "label": "방어관통",     "appliesTo": ["weapon"],                 "baseVal": 3,  "perGrade": 2.5 },
+    { "id": "bossdmg",   "label": "보스전 데미지","appliesTo": ["weapon","ring"],          "baseVal": 3,  "perGrade": 2   },
+    { "id": "lifesteal", "label": "흡혈",         "appliesTo": ["weapon","ring"],          "baseVal": 2,  "perGrade": 1.5 },
+    { "id": "thorns",    "label": "반격",         "appliesTo": ["armor","shield"],         "baseVal": 3,  "perGrade": 2   },
+    { "id": "dodge",     "label": "회피율",       "appliesTo": ["armor","shield","ring"],  "baseVal": 1,  "perGrade": 0.8 },
+    { "id": "regen",     "label": "재생",         "appliesTo": ["armor","ring"],           "baseVal": 1,  "perGrade": 0.7 },
+    { "id": "guard",     "label": "철벽",         "appliesTo": ["shield"],                 "baseVal": 3,  "perGrade": 2   },
+    { "id": "proc",      "label": "용병 발동률",  "appliesTo": ["ring"],                   "baseVal": 2,  "perGrade": 1.5 },
+    { "id": "mana",      "label": "마력",         "appliesTo": ["weapon","armor","ring"],  "baseVal": 5,  "perGrade": 8   },
+    { "id": "manaRegen", "label": "마력회복",     "appliesTo": ["ring","armor"],           "baseVal": 1,  "perGrade": 0.5 }
+  ],
+
+  "mercenaryBonusRate": 0.01,
+
+  "boxes": {
+    "equipmentBox": {
+      "초급장비상자": { "price": 50000 },
+      "중급장비상자": { "price": 300000 },
+      "고급장비상자": { "price": 2000000 },
+      "영웅장비상자": { "price": 15000000 },
+      "전설장비상자": { "price": 100000000 },
+      "신화장비상자": { "price": 800000000 }
+    },
+    "mercenaryBox": {
+      "초급용병상자": { "price": 80000 },
+      "중급용병상자": { "price": 500000 },
+      "고급용병상자": { "price": 3000000 },
+      "영웅용병상자": { "price": 20000000 },
+      "전설용병상자": { "price": 150000000 },
+      "신화용병상자": { "price": 1000000000 }
+    },
+    "stoneBox": {
+      "초급강화석상자": { "price": 30000,     "rolls": [{"amt":1,"weight":50},{"amt":2,"weight":30},{"amt":3,"weight":15},{"amt":5,"weight":4},{"amt":10,"weight":1}] },
+      "중급강화석상자": { "price": 200000,    "rolls": [{"amt":5,"weight":45},{"amt":10,"weight":30},{"amt":20,"weight":15},{"amt":40,"weight":8},{"amt":80,"weight":2}] },
+      "고급강화석상자": { "price": 1500000,   "rolls": [{"amt":25,"weight":40},{"amt":50,"weight":30},{"amt":100,"weight":18},{"amt":200,"weight":9},{"amt":500,"weight":3}] },
+      "영웅강화석상자": { "price": 12000000,  "rolls": [{"amt":100,"weight":35},{"amt":200,"weight":30},{"amt":400,"weight":20},{"amt":800,"weight":12},{"amt":2000,"weight":3}] },
+      "전설강화석상자": { "price": 100000000, "rolls": [{"amt":500,"weight":30},{"amt":1000,"weight":28},{"amt":2000,"weight":22},{"amt":5000,"weight":15},{"amt":10000,"weight":5}] }
+    },
+    "soulBox": {
+      "하급소울상자":   { "price": 500000,       "rolls": [{"amt":1,"weight":55},{"amt":2,"weight":28},{"amt":3,"weight":12},{"amt":5,"weight":4},{"amt":10,"weight":1}] },
+      "중급소울상자":   { "price": 5000000,      "rolls": [{"amt":5,"weight":45},{"amt":10,"weight":30},{"amt":20,"weight":16},{"amt":50,"weight":7},{"amt":100,"weight":2}] },
+      "상급소울상자":   { "price": 50000000,     "rolls": [{"amt":30,"weight":40},{"amt":60,"weight":28},{"amt":120,"weight":20},{"amt":300,"weight":10},{"amt":700,"weight":2}] },
+      "영웅소울상자":   { "price": 500000000,    "rolls": [{"amt":150,"weight":35},{"amt":300,"weight":30},{"amt":600,"weight":20},{"amt":1500,"weight":13},{"amt":3000,"weight":2}] },
+      "전설소울상자":   { "price": 5000000000,   "rolls": [{"amt":800,"weight":30},{"amt":1500,"weight":28},{"amt":3000,"weight":22},{"amt":8000,"weight":15},{"amt":20000,"weight":5}] }
+    },
+    "equipDropRate": { "weapon": 20, "armor": 20, "shield": 20, "ring": 40 }
+  },
+
+  "season": {
+    "name": "시즌 1: 태초의 균열",
+    "startDate": "2025-01-01",
+    "endDate": "2025-12-31",
+    "rewards": [
+      { "rank": 1,  "gold": 500000000, "stones": 500, "souls": 100, "title": "🏆[시즌 챔피언]" },
+      { "rank": 2,  "gold": 200000000, "stones": 300, "souls": 60,  "title": "🥈[준우승]" },
+      { "rank": 3,  "gold": 100000000, "stones": 200, "souls": 40,  "title": "🥉[3위]" },
+      { "rank": 10, "gold": 30000000,  "stones": 80,  "souls": 15,  "title": "⭐[시즌 TOP10]" }
+    ]
+  },
+
+  "game": {
+    "raidCooldownSec": 60,
+    "raidTimeoutSec": 30,
+    "huntMaxHours": 8,
+    "huntMinMinutes": 1,
+    "baseMana": 20,
+    "minBalance": 2000,
+    "loanMaxRatio": 0.5,
+    "loanHourlyInterestRate": 5,
+    "depositGraceMinutes": 20,
+    "depositHourlyInterestRate": 0.05,
+    "mercenaryPartyContribRatio": 0.5
+  }
+}

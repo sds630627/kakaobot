@@ -1,0 +1,18 @@
+{
+  "_comment": "스킬북 목록 — GitHub에서 수정 후 커밋하면 자동 반영",
+  "skills": [
+    { "name": "A급 검술",       "grade": "고급", "type": "passive", "stat": "atk", "value": 10,  "desc": "기본 공격력 +10 (영구)",       "cost": { "souls": 5,   "gold": 500000     } },
+    { "name": "S급 검술",       "grade": "영웅", "type": "passive", "stat": "atk", "value": 25,  "desc": "기본 공격력 +25 (영구)",       "cost": { "souls": 15,  "gold": 3000000    } },
+    { "name": "SS급 검술",      "grade": "전설", "type": "passive", "stat": "atk", "value": 60,  "desc": "기본 공격력 +60 (영구)",       "cost": { "souls": 40,  "gold": 20000000   } },
+    { "name": "A급 방어술",     "grade": "고급", "type": "passive", "stat": "def", "value": 8,   "desc": "기본 방어력 +8 (영구)",        "cost": { "souls": 5,   "gold": 500000     } },
+    { "name": "S급 방어술",     "grade": "영웅", "type": "passive", "stat": "def", "value": 20,  "desc": "기본 방어력 +20 (영구)",       "cost": { "souls": 15,  "gold": 3000000    } },
+    { "name": "SS급 방어술",    "grade": "전설", "type": "passive", "stat": "def", "value": 50,  "desc": "기본 방어력 +50 (영구)",       "cost": { "souls": 40,  "gold": 20000000   } },
+    { "name": "A급 강인함",     "grade": "고급", "type": "passive", "stat": "hp",  "value": 100, "desc": "기본 HP +100 (영구)",          "cost": { "souls": 5,   "gold": 500000     } },
+    { "name": "S급 강인함",     "grade": "영웅", "type": "passive", "stat": "hp",  "value": 250, "desc": "기본 HP +250 (영구)",          "cost": { "souls": 15,  "gold": 3000000    } },
+    { "name": "SS급 강인함",    "grade": "전설", "type": "passive", "stat": "hp",  "value": 600, "desc": "기본 HP +600 (영구)",          "cost": { "souls": 40,  "gold": 20000000   } },
+    { "name": "연속타",         "grade": "영웅", "type": "combat", "effect": "extraHit",        "value": 15,  "desc": "전투 중 15% 확률로 추가 공격",                 "cost": { "souls": 20,  "gold": 5000000    } },
+    { "name": "강철 의지",      "grade": "전설", "type": "combat", "effect": "lastStand",       "value": 30,  "desc": "HP 20% 이하 시 공격력 +30%",                  "cost": { "souls": 60,  "gold": 30000000   } },
+    { "name": "용의 피",        "grade": "신화", "type": "combat", "effect": "dragonBlood",     "value": 50,  "desc": "매 턴 최대HP 2% 회복 + 공격력 +50",           "cost": { "souls": 150, "gold": 200000000  } },
+    { "name": "진명해방 각성",  "grade": "태초", "type": "combat", "effect": "ultimateAwaken",  "value": 100, "desc": "진명해방 스킬 효과 2배",                      "cost": { "souls": 500, "gold": 2000000000 } }
+  ]
+}
