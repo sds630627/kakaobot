@@ -50,8 +50,13 @@ const DEFAULT_CONFIG = {
     },
     // 장비상자 개봉 시 부위별 드랍 확률(가중치)
     equipDropRate: { weapon: 20, armor: 20, shield: 20, ring: 40 },
-    // 장비상점 (초급 등급만 판매)
-    equipShop: { weapon: 1000, armor: 1000, shield: 2000, ring: 3000 },
+    // 장비상점 — 등급별 구매 가격
+    equipShop: {
+        weapon: { 초급: 1000,   중급: 50000,   고급: 500000,   영웅: 5000000,   전설: 50000000,   신화: 500000000  },
+        armor:  { 초급: 1000,   중급: 50000,   고급: 500000,   영웅: 5000000,   전설: 50000000,   신화: 500000000  },
+        shield: { 초급: 2000,   중급: 80000,   고급: 800000,   영웅: 8000000,   전설: 80000000,   신화: 800000000  },
+        ring:   { 초급: 3000,   중급: 120000,  고급: 1200000,  영웅: 12000000,  전설: 120000000,  신화: 1200000000 },
+    },
     // 강화석 상자 (랜덤 수량)
     stoneBox: {
         초급강화석상자: { price: 30000,      rolls: [
@@ -122,6 +127,11 @@ function loadConfig() {
     } catch (e) {
         console.error('config.json 로드 실패:', e.message);
         CONFIG = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    }
+    // 구조 변경 감지: equipShop이 구 버전(숫자) 이면 기본값으로 교체
+    if (CONFIG.equipShop && typeof CONFIG.equipShop.weapon !== 'object') {
+        CONFIG.equipShop = JSON.parse(JSON.stringify(DEFAULT_CONFIG.equipShop));
+        saveConfig();
     }
 }
 
@@ -460,13 +470,13 @@ function calcCombatPower(stat) {
 // Phase 3: 사냥터
 // ─────────────────────────────────────────────
 const HUNTING_GROUNDS = [
-    { name: '뒷산',        grade: '초급', recommendedPower: 100,    minPower: 30,     goldMin: 500,     goldMax: 2000,     stoneMin: 1,   stoneMax: 3 },
-    { name: '어두운 숲',   grade: '중급', recommendedPower: 400,    minPower: 150,    goldMin: 2000,    goldMax: 8000,     stoneMin: 2,   stoneMax: 6 },
-    { name: '폐광',        grade: '고급', recommendedPower: 1500,   minPower: 600,    goldMin: 8000,    goldMax: 30000,    stoneMin: 5,   stoneMax: 15 },
-    { name: '얼음 동굴',   grade: '영웅', recommendedPower: 6000,   minPower: 2500,   goldMin: 30000,   goldMax: 120000,   stoneMin: 12,  stoneMax: 35 },
-    { name: '용의 둥지',   grade: '전설', recommendedPower: 25000,  minPower: 10000,  goldMin: 120000,  goldMax: 500000,   stoneMin: 30,  stoneMax: 90 },
-    { name: '천공의 섬',   grade: '신화', recommendedPower: 100000, minPower: 40000,  goldMin: 500000,  goldMax: 2000000,  stoneMin: 80,  stoneMax: 250 },
-    { name: '혼돈의 균열', grade: '태초', recommendedPower: 500000, minPower: 200000, goldMin: 2000000, goldMax: 8000000,  stoneMin: 200, stoneMax: 600 }
+    { name: '뒷산',        grade: '초급', recommendedPower: 100,    minPower: 30,     goldMin: 1500,    goldMax: 6000,     stoneMin: 2,   stoneMax: 6  },
+    { name: '어두운 숲',   grade: '중급', recommendedPower: 400,    minPower: 150,    goldMin: 6000,    goldMax: 24000,    stoneMin: 5,   stoneMax: 15 },
+    { name: '폐광',        grade: '고급', recommendedPower: 1500,   minPower: 600,    goldMin: 25000,   goldMax: 90000,    stoneMin: 15,  stoneMax: 45 },
+    { name: '얼음 동굴',   grade: '영웅', recommendedPower: 6000,   minPower: 2500,   goldMin: 90000,   goldMax: 360000,   stoneMin: 35,  stoneMax: 100 },
+    { name: '용의 둥지',   grade: '전설', recommendedPower: 25000,  minPower: 10000,  goldMin: 360000,  goldMax: 1500000,  stoneMin: 90,  stoneMax: 280 },
+    { name: '천공의 섬',   grade: '신화', recommendedPower: 100000, minPower: 40000,  goldMin: 1500000, goldMax: 6000000,  stoneMin: 250, stoneMax: 750 },
+    { name: '혼돈의 균열', grade: '태초', recommendedPower: 500000, minPower: 200000, goldMin: 6000000, goldMax: 24000000, stoneMin: 600, stoneMax: 1800 }
 ];
 
 function getHuntingGround(name) {
@@ -2220,9 +2230,10 @@ server.on('message', (msg, rinfo) => {
         // ══════════════════════════════════════════════
         if (cmd === '!도움말') {
             return reply(
-                '📜 [타짜봇v3]\n' +
+                '📜 몰타알PG]\n' +
                 '━━━━━━━━━━━━━━━━━━━━\n' +
-                '📊 !내정보 !내스탯 !내마법 !내스킬\n' +
+                '📖 !가이드 [1~5] — 게임 진행 가이드북\n' +
+                '📊 !내정보 / !정보 [유저이름] / !내스탯 !내마법 !내스킬\n' +
                 '   !파티원 !장비 !장비인벤 !내상자\n\n' +
                 '🎰 게임: !섯다 !블랙잭 !바카라 !대결신청\n\n' +
                 '📈 코인: !코인시세 !매수 !매도 !내코인\n\n' +
@@ -2230,20 +2241,4 @@ server.on('message', (msg, rinfo) => {
                 '   !대출 !상환 !대출조회\n\n' +
                 '📦 상자: !상자목록 !상자구매 !상자열기\n' +
                 '   !장비상자목록 !용병상자목록\n' +
-                '   !강화석상자목록 !소울상자목록\n\n' +
-                '🗡️ 장비: !장비장착 [이름or번호]\n' +
-                '   !장비강화 [슬롯] !장비수리전체 !장비판매 [번호]\n\n' +
-                '👥 파티: !파티편성 [이름...] !파티해제\n\n' +
-                '🏕️ 사냥: !사냥터 !사냥시작 [곳] !사냥종료 !사냥현황\n\n' +
-                '👹 레이드: !레이드목록 !레이드 [보스]\n' +
-                '   전투: !공격 !강공 !방어 !회피 !방해 !후퇴\n' +
-                '   마법: !마법1 !마법2 (슬롯 설정: !마법장착 1 [이름])\n\n' +
-                '📖 스킬: !스킬목록 !스킬습득 [이름]\n' +
-                '🔮 마법: !마법목록 !마법구매 !마법합성\n' +
-                '   !마법장착 [1or2] [이름] !마법해제 [1or2]\n\n' +
-                '🌌 !시즌정보\n' +
-                '💡 금액: 숫자/1만/1.5억/1조/올인/하프'
-            );
-        }
-
-        // ═════
+          
