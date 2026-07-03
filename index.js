@@ -1,14 +1,196 @@
 'use strict';
 
-// index.js — 타짜봇 v3 (시즌제/가챠/업적/바카라/1:1주사위/은행/config.json)
+// index.js — 타짜봇 v3
 const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
 const PORT = 3000;
-const DATA_FILE = path.join(__dirname, 'users.json');
-const MARKET_FILE = path.join(__dirname, 'market.json');
-const CONFIG_FILE = path.join(__dirname, 'config.json');
+const DATA_FILE    = path.join(__dirname, 'users.json');
+const MARKET_FILE  = path.join(__dirname, 'market.json');
+const CONFIG_FILE  = path.join(__dirname, 'config.json');
+
+// ── 외부 데이터 파일 경로 (GitHub에서 수정 → 자동 반영)
+const DATA_DIR = __dirname;
+const DATA_FILES = {
+    balance:     path.join(DATA_DIR, 'data_balance.json'),
+    mercenaries: path.join(DATA_DIR, 'data_mercenaries.json'),
+    bosses:      path.join(DATA_DIR, 'data_bosses.json'),
+    hunting:     path.join(DATA_DIR, 'data_hunting.json'),
+    magic:       path.join(DATA_DIR, 'data_magic.json'),
+    skills:      path.join(DATA_DIR, 'data_skills.json'),
+};
+
+// 전역 DATA 객체 — 모든 게임 데이터는 이걸 참조
+let DATA = {};
+
+function loadDataFile(key) {
+    try {
+        const raw = fs.readFileSync(DATA_FILES[key], 'utf8');
+        const parsed = JSON.parse(raw);
+        DATA[key] = parsed;
+        return true;
+    } catch (e) {
+        console.error(`[DATA] ${key} 로드 실패:`, e.message);
+        return false;
+    }
+}
+
+function loadAllData() {
+    for (const key of Object.keys(DATA_FILES)) {
+        loadDataFile(key);
+    }
+    applyDataToConstants();
+    console.log('[DATA] 모든 데이터 파일 로드 완료');
+}
+
+// DATA → 런타임 상수 반영 (핫리로드 시 재호출)
+function applyDataToConstants() {
+    const b = DATA.balance;
+    if (!b) return;
+
+    // 밸런스
+    if (b.enhance) {
+        ENHANCE_SUCCESS_RATE.length = 0;
+        b.enhance.successRate.forEach(v => ENHANCE_SUCCESS_RATE.push(v));
+        Object.assign(ENHANCE_DESTROY_RATE, b.enhance.destroyRate || {});
+        Object.assign(ENHANCE_GOLD_BASE, b.enhance.goldBase || {});
+        Object.assign(ENHANCE_STONE_BASE, b.enhance.stoneBase || {});
+    }
+    if (b.equipment) {
+        Object.assign(WEAPON_ATK, b.equipment.weaponAtk || {});
+        Object.assign(ARMOR_DEF,  b.equipment.armorDef  || {});
+        Object.assign(ARMOR_HP,   b.equipment.armorHp   || {});
+        Object.assign(SHIELD_DEF, b.equipment.shieldDef || {});
+        Object.assign(RING_BUDGET,b.equipment.ringBudget|| {});
+        Object.assign(SELL_PRICE_BASE, b.equipment.sellPrice || {});
+        Object.assign(REPAIR_GOLD_BASE, b.equipment.repairCost || {});
+    }
+    if (b.effectPool) {
+        EFFECT_POOL.length = 0;
+        for (const e of b.effectPool) {
+            EFFECT_POOL.push({
+                ...e,
+                desc: makeEffectDesc(e.id)
+            });
+        }
+    }
+
+    // 용병
+    const m = DATA.mercenaries;
+    if (m && m.members) {
+        for (const k of Object.keys(PARTY_MEMBERS)) delete PARTY_MEMBERS[k];
+        for (const mem of m.members) {
+            PARTY_MEMBERS[mem.name] = {
+                grade: mem.grade,
+                baseSkillPower: mem.baseSkillPower,
+                skill: mem.skill,
+                skillDesc: mem.skillDesc
+            };
+        }
+    }
+
+    // 보스
+    const bd = DATA.bosses;
+    if (bd && bd.bosses) {
+        RAID_BOSSES.length = 0;
+        for (const boss of bd.bosses) RAID_BOSSES.push(boss);
+    }
+    if (bd && bd.patterns) {
+        BOSS_PATTERNS.length = 0;
+        for (const p of bd.patterns) BOSS_PATTERNS.push(p);
+    }
+
+    // 사냥터
+    const h = DATA.hunting;
+    if (h && h.grounds) {
+        HUNTING_GROUNDS.length = 0;
+        for (const g of h.grounds) {
+            HUNTING_GROUNDS.push({
+                name: g.name, grade: g.grade,
+                recommendedPower: g.recommendedPower, minPower: g.minPower,
+                goldMin: g.goldMin, goldMax: g.goldMax,
+                stoneMin: g.stoneMin, stoneMax: g.stoneMax
+            });
+            // lootExtra 맵 갱신
+            HUNT_LOOT_EXTRA[g.name] = g.lootExtra || [];
+        }
+    }
+
+    // 마법
+    const mg = DATA.magic;
+    if (mg && mg.spells) {
+        MAGIC_BOOKS.length = 0;
+        for (const sp of mg.spells) MAGIC_BOOKS.push(sp);
+        // 진화 체인 재구성
+        for (const k of Object.keys(MAGIC_EVOLUTION_CHAIN)) delete MAGIC_EVOLUTION_CHAIN[k];
+        for (const sp of MAGIC_BOOKS) {
+            if (sp.evolves) MAGIC_EVOLUTION_CHAIN[sp.id] = sp.evolves;
+        }
+    }
+
+    // 스킬
+    const sk = DATA.skills;
+    if (sk && sk.skills) {
+        for (const k of Object.keys(SKILL_BOOKS)) delete SKILL_BOOKS[k];
+        for (const s of sk.skills) SKILL_BOOKS[s.name] = s;
+    }
+
+    // CONFIG 보조 값도 balance.game에서 덮어쓰기
+    if (b.game && CONFIG && Object.keys(CONFIG).length > 0) {
+        if (b.game.raidCooldownSec  !== undefined) CONFIG._raidCooldownMs  = b.game.raidCooldownSec  * 1000;
+        if (b.game.raidTimeoutSec   !== undefined) CONFIG._raidTimeoutMs   = b.game.raidTimeoutSec   * 1000;
+        if (b.game.minBalance       !== undefined) MIN_BALANCE             = b.game.minBalance;
+        if (b.game.huntMaxHours     !== undefined) CONFIG._huntMaxMin      = b.game.huntMaxHours * 60;
+        if (b.game.baseMana         !== undefined) CONFIG._baseMana        = b.game.baseMana;
+        if (b.boxes) {
+            if (b.boxes.equipmentBox)  Object.assign(CONFIG.equipmentBox  || {}, b.boxes.equipmentBox);
+            if (b.boxes.mercenaryBox)  Object.assign(CONFIG.mercenaryBox  || {}, b.boxes.mercenaryBox);
+            if (b.boxes.stoneBox)      Object.assign(CONFIG.stoneBox      || {}, b.boxes.stoneBox);
+            if (b.boxes.soulBox)       Object.assign(CONFIG.soulBox       || {}, b.boxes.soulBox);
+            if (b.boxes.equipDropRate) Object.assign(CONFIG.equipDropRate || {}, b.boxes.equipDropRate);
+        }
+        if (b.season) SEASON_CONFIG.name = b.season.name || SEASON_CONFIG.name;
+    }
+}
+
+// 특수 효과 desc 함수 생성 (data에서 오는 건 문자열 템플릿)
+function makeEffectDesc(id) {
+    const MAP = {
+        crit:      v => `치명타 확률 +${v}%`,
+        critdmg:   v => `치명타 피해 +${v}%`,
+        pierce:    v => `방어관통 +${v}%`,
+        bossdmg:   v => `보스 상대 데미지 +${v}%`,
+        lifesteal: v => `공격 시 데미지의 ${v}% 흡혈`,
+        thorns:    v => `피격 시 ${v}% 데미지 반사`,
+        dodge:     v => `회피율 +${v}%`,
+        regen:     v => `매 턴 최대체력의 ${v}% 회복`,
+        guard:     v => `받는 피해 ${v}% 감소`,
+        proc:      v => `용병 스킬 발동확률 +${v}%`,
+        mana:      v => `최대 마력 +${v}`,
+        manaRegen: v => `턴당 마력회복 +${v}`,
+    };
+    return MAP[id] || (v => `+${v}`);
+}
+
+// 파일 변경 감지 → 핫리로드 (auto-update-dev가 파일을 교체하면 즉시 반영)
+function watchDataFiles() {
+    for (const [key, filepath] of Object.entries(DATA_FILES)) {
+        try {
+            fs.watchFile(filepath, { interval: 2000 }, (curr, prev) => {
+                if (curr.mtime > prev.mtime) {
+                    console.log(`[HOTRELOAD] ${path.basename(filepath)} 변경 감지 → 리로드`);
+                    if (loadDataFile(key)) {
+                        applyDataToConstants();
+                        console.log(`[HOTRELOAD] ${key} 적용 완료`);
+                    }
+                }
+            });
+        } catch (e) {
+            console.warn(`[DATA] ${key} 파일 감시 실패:`, e.message);
+        }
+    }
+}
 
 const server = dgram.createSocket('udp4');
 
@@ -1302,7 +1484,7 @@ function saveData(data) {
     }
 }
 
-const MIN_BALANCE = 2000;
+let MIN_BALANCE = 2000;
 // 잔액이 MIN_BALANCE 이하면 자동 충전. 충전 시 메시지 반환(없으면 null).
 function checkMinBalance(user) {
     if (user.points < MIN_BALANCE) {
@@ -3362,7 +3544,7 @@ server.on('message', (msg, rinfo) => {
 
             // 같은 방에 다른 레이드 진행 중인지 확인
             const roomRaids = Object.entries(raidSessions)
-                .filter(([k, s]) => k.startsWith(`${room}:`) && s.sender !== sender && Date.now() - (s.lastActionAt || 0) < 60000);
+                .filter(([k, s]) => k.startsWith(`${room}:`) && s.sender !== sender && Date.now() - (s.lastActionAt || 0) < (CONFIG._raidTimeoutMs || 30000));
             let otherRaidMsg = '';
             if (roomRaids.length > 0) {
                 otherRaidMsg = `ℹ️ 현재 방에서 레이드 중: ${roomRaids.map(([,s]) => `${s.sender}(${s.boss.name})`).join(', ')}\n`;
@@ -3412,7 +3594,7 @@ server.on('message', (msg, rinfo) => {
 
             // 1분 타임아웃: 다른 사람 세션 만료 체크도 겸용
             for (const [key, s] of Object.entries(raidSessions)) {
-                if (Date.now() - (s.lastActionAt || s.startedAt || 0) > 60000) {
+                if (Date.now() - (s.lastActionAt || s.startedAt || 0) > (CONFIG._raidTimeoutMs || 30000)) {
                     delete raidSessions[key];
                 }
             }
@@ -3548,7 +3730,7 @@ server.on('message', (msg, rinfo) => {
             if (!session) {
                 // 이 방에 다른 사람 레이드가 있는지 확인
                 const roomRaids = Object.entries(raidSessions)
-                    .filter(([k, s]) => k.startsWith(`${room}:`) && Date.now() - (s.lastActionAt || 0) < 60000);
+                    .filter(([k, s]) => k.startsWith(`${room}:`) && Date.now() - (s.lastActionAt || 0) < (CONFIG._raidTimeoutMs || 30000));
                 if (roomRaids.length > 0) {
                     const info = roomRaids.map(([,s]) => `${s.sender} vs ${s.boss.name} (턴${s.turn})\n${hpBar(s.bossHp, s.boss.maxHp, s.enraged)}`).join('\n');
                     return reply(`👀 [현재 레이드 중]\n─────────────────────\n${info}`);
@@ -3556,7 +3738,9 @@ server.on('message', (msg, rinfo) => {
                 return reply('❌ 진행 중인 레이드가 없습니다.');
             }
             const idleSec = Math.floor((Date.now() - (session.lastActionAt || 0)) / 1000);
-            const timeoutWarn = idleSec > 40 ? `\n⚠️ ${60 - idleSec}초 후 자동 후퇴!` : '';
+            const raidTimeoutSec = Math.floor((CONFIG._raidTimeoutMs || 30000) / 1000);
+            const warnAt = Math.floor(raidTimeoutSec * 0.6);
+            const timeoutWarn = idleSec > warnAt ? `\n⚠️ ${raidTimeoutSec - idleSec}초 후 자동 후퇴!` : '';
             let m = `⚔️ [레이드 현황] ${session.boss.name} — 턴 ${session.turn}\n`;
             m += `👹 보스${session.enraged ? ' 💢광폭화' : ''}\n`;
             m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n`;
@@ -4570,14 +4754,37 @@ server.on('message', (msg, rinfo) => {
 
 server.bind(PORT);
 
-// 레이드 1분 타임아웃 자동 청소 (10초마다)
+// ── 서버 시작 시 데이터 로드 + 레이드 세션 복원
+server.once('listening', () => {
+    loadAllData();
+    watchDataFiles();
+
+    try {
+        const raidFile = path.join(__dirname, 'raid_sessions.json');
+        if (fs.existsSync(raidFile)) {
+            const saved = JSON.parse(fs.readFileSync(raidFile, 'utf8'));
+            const now = Date.now();
+            const timeout = (CONFIG._raidTimeoutMs || 30000) * 3;
+            for (const [key, s] of Object.entries(saved)) {
+                if (s.lastActionAt && now - s.lastActionAt < timeout) {
+                    raidSessions[key] = s;
+                    console.log(`[레이드 복원] ${s.sender} vs ${s.boss?.name}`);
+                }
+            }
+        }
+    } catch(e) { console.warn('[레이드 복원 실패]', e.message); }
+});
+
+// 레이드 세션 5초마다 저장 + 타임아웃 청소
 setInterval(() => {
     const now = Date.now();
     for (const [key, s] of Object.entries(raidSessions)) {
-        if (now - (s.lastActionAt || s.startedAt || 0) > 60000) {
-            console.log(`[레이드 타임아웃] ${s.sender} vs ${s.boss.name}`);
+        if (now - (s.lastActionAt || s.startedAt || 0) > (CONFIG._raidTimeoutMs || 30000)) {
+            console.log(`[레이드 타임아웃] ${s.sender} vs ${s.boss?.name}`);
             delete raidSessions[key];
         }
     }
-}, 10000);
-
+    try {
+        fs.writeFileSync(path.join(__dirname, 'raid_sessions.json'), JSON.stringify(raidSessions, null, 2));
+    } catch(e) {}
+}, 5000);
