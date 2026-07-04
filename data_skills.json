@@ -1,18 +1,133 @@
 {
-  "_comment": "스킬북 목록 — GitHub에서 수정 후 커밋하면 자동 반영",
+  "_comment": "스킬북 — 계열별 트리 구조, 이전 단계 보유 시에만 다음 단계 구매 가능",
   "skills": [
-    { "name": "A급 검술",       "grade": "고급", "type": "passive", "stat": "atk", "value": 10,  "desc": "기본 공격력 +10 (영구)",       "cost": { "souls": 5,   "gold": 500000     } },
-    { "name": "S급 검술",       "grade": "영웅", "type": "passive", "stat": "atk", "value": 25,  "desc": "기본 공격력 +25 (영구)",       "cost": { "souls": 15,  "gold": 3000000    } },
-    { "name": "SS급 검술",      "grade": "전설", "type": "passive", "stat": "atk", "value": 60,  "desc": "기본 공격력 +60 (영구)",       "cost": { "souls": 40,  "gold": 20000000   } },
-    { "name": "A급 방어술",     "grade": "고급", "type": "passive", "stat": "def", "value": 8,   "desc": "기본 방어력 +8 (영구)",        "cost": { "souls": 5,   "gold": 500000     } },
-    { "name": "S급 방어술",     "grade": "영웅", "type": "passive", "stat": "def", "value": 20,  "desc": "기본 방어력 +20 (영구)",       "cost": { "souls": 15,  "gold": 3000000    } },
-    { "name": "SS급 방어술",    "grade": "전설", "type": "passive", "stat": "def", "value": 50,  "desc": "기본 방어력 +50 (영구)",       "cost": { "souls": 40,  "gold": 20000000   } },
-    { "name": "A급 강인함",     "grade": "고급", "type": "passive", "stat": "hp",  "value": 100, "desc": "기본 HP +100 (영구)",          "cost": { "souls": 5,   "gold": 500000     } },
-    { "name": "S급 강인함",     "grade": "영웅", "type": "passive", "stat": "hp",  "value": 250, "desc": "기본 HP +250 (영구)",          "cost": { "souls": 15,  "gold": 3000000    } },
-    { "name": "SS급 강인함",    "grade": "전설", "type": "passive", "stat": "hp",  "value": 600, "desc": "기본 HP +600 (영구)",          "cost": { "souls": 40,  "gold": 20000000   } },
-    { "name": "연속타",         "grade": "영웅", "type": "combat", "effect": "extraHit",        "value": 15,  "desc": "전투 중 15% 확률로 추가 공격",                 "cost": { "souls": 20,  "gold": 5000000    } },
-    { "name": "강철 의지",      "grade": "전설", "type": "combat", "effect": "lastStand",       "value": 30,  "desc": "HP 20% 이하 시 공격력 +30%",                  "cost": { "souls": 60,  "gold": 30000000   } },
-    { "name": "용의 피",        "grade": "신화", "type": "combat", "effect": "dragonBlood",     "value": 50,  "desc": "매 턴 최대HP 2% 회복 + 공격력 +50",           "cost": { "souls": 150, "gold": 200000000  } },
-    { "name": "진명해방 각성",  "grade": "태초", "type": "combat", "effect": "ultimateAwaken",  "value": 100, "desc": "진명해방 스킬 효과 2배",                      "cost": { "souls": 500, "gold": 2000000000 } }
+    {
+      "name": "검사의 눈빛",
+      "grade": "초급", "series": "attack", "tier": 1,
+      "type": "passive", "stat": "atk", "value": 8,
+      "requires": null,
+      "desc": "전투 경험으로 눈빛이 날카로워졌다. 공격력 +8 (영구)",
+      "cost": { "souls": 3, "gold": 300000 }
+    },
+    {
+      "name": "맹공의 서",
+      "grade": "중급", "series": "attack", "tier": 2,
+      "type": "passive", "stat": "atk", "value": 22,
+      "requires": "검사의 눈빛",
+      "desc": "공격의 비법을 담은 서적. 공격력 +22 (영구)",
+      "cost": { "souls": 10, "gold": 2000000 }
+    },
+    {
+      "name": "패왕의 각성",
+      "grade": "고급", "series": "attack", "tier": 3,
+      "type": "passive", "stat": "atk", "value": 55,
+      "requires": "맹공의 서",
+      "desc": "패왕이 깨어났다. 공격력 +55 (영구)",
+      "cost": { "souls": 30, "gold": 15000000 }
+    },
+    {
+      "name": "신의 일격",
+      "grade": "영웅", "series": "attack", "tier": 4,
+      "type": "passive", "stat": "atk", "value": 120,
+      "requires": "패왕의 각성",
+      "desc": "신화 속 검사의 경지. 공격력 +120 (영구)",
+      "cost": { "souls": 80, "gold": 100000000 }
+    },
+    {
+      "name": "수련생의 자세",
+      "grade": "초급", "series": "defense", "tier": 1,
+      "type": "passive", "stat": "def", "value": 6,
+      "requires": null,
+      "desc": "기초 방어 수련. 방어력 +6 (영구)",
+      "cost": { "souls": 3, "gold": 300000 }
+    },
+    {
+      "name": "철갑술",
+      "grade": "중급", "series": "defense", "tier": 2,
+      "type": "passive", "stat": "def", "value": 18,
+      "requires": "수련생의 자세",
+      "desc": "몸을 철갑으로 단련하는 비술. 방어력 +18 (영구)",
+      "cost": { "souls": 10, "gold": 2000000 }
+    },
+    {
+      "name": "불굴의 요새",
+      "grade": "고급", "series": "defense", "tier": 3,
+      "type": "passive", "stat": "def", "value": 45,
+      "requires": "철갑술",
+      "desc": "무너지지 않는 요새가 되어라. 방어력 +45 (영구)",
+      "cost": { "souls": 30, "gold": 15000000 }
+    },
+    {
+      "name": "대지의 화신",
+      "grade": "영웅", "series": "defense", "tier": 4,
+      "type": "passive", "stat": "def", "value": 100,
+      "requires": "불굴의 요새",
+      "desc": "대지 자체가 방패가 된다. 방어력 +100 (영구)",
+      "cost": { "souls": 80, "gold": 100000000 }
+    },
+    {
+      "name": "생명의 씨앗",
+      "grade": "초급", "series": "vitality", "tier": 1,
+      "type": "passive", "stat": "hp", "value": 80,
+      "requires": null,
+      "desc": "내면의 생명력을 깨운다. HP +80 (영구)",
+      "cost": { "souls": 3, "gold": 300000 }
+    },
+    {
+      "name": "강철 심장",
+      "grade": "중급", "series": "vitality", "tier": 2,
+      "type": "passive", "stat": "hp", "value": 220,
+      "requires": "생명의 씨앗",
+      "desc": "심장이 강철처럼 단단해졌다. HP +220 (영구)",
+      "cost": { "souls": 10, "gold": 2000000 }
+    },
+    {
+      "name": "불사의 혈통",
+      "grade": "고급", "series": "vitality", "tier": 3,
+      "type": "passive", "stat": "hp", "value": 550,
+      "requires": "강철 심장",
+      "desc": "불사의 피가 흐른다. HP +550 (영구)",
+      "cost": { "souls": 30, "gold": 15000000 }
+    },
+    {
+      "name": "용왕의 생명력",
+      "grade": "영웅", "series": "vitality", "tier": 4,
+      "type": "passive", "stat": "hp", "value": 1200,
+      "requires": "불사의 혈통",
+      "desc": "용왕의 피가 몸속에서 끓어오른다. HP +1200 (영구)",
+      "cost": { "souls": 80, "gold": 100000000 }
+    },
+    {
+      "name": "연속타 비법",
+      "grade": "영웅", "series": "combat", "tier": 1,
+      "type": "combat", "effect": "extraHit", "value": 20,
+      "requires": null,
+      "desc": "20% 확률로 추가 공격 발동",
+      "cost": { "souls": 25, "gold": 8000000 }
+    },
+    {
+      "name": "불굴의 의지",
+      "grade": "전설", "series": "combat", "tier": 2,
+      "type": "combat", "effect": "lastStand", "value": 35,
+      "requires": "연속타 비법",
+      "desc": "HP 20% 이하 시 공격력 +35%",
+      "cost": { "souls": 70, "gold": 40000000 }
+    },
+    {
+      "name": "용의 피",
+      "grade": "신화", "series": "combat", "tier": 3,
+      "type": "combat", "effect": "dragonBlood", "value": 60,
+      "requires": "불굴의 의지",
+      "desc": "매 턴 최대HP 2% 회복 + 공격력 +60",
+      "cost": { "souls": 150, "gold": 200000000 }
+    },
+    {
+      "name": "진명해방 각성",
+      "grade": "태초", "series": "combat", "tier": 4,
+      "type": "combat", "effect": "ultimateAwaken", "value": 100,
+      "requires": "용의 피",
+      "desc": "진명해방 스킬 효과 2배. 검은 지배자의 진가를 해방시킨다.",
+      "cost": { "souls": 500, "gold": 2000000000 }
+    }
   ]
 }
