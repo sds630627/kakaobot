@@ -1,58 +1,105 @@
 {
-  "_comment": "용병 목록 — GitHub에서 수정 후 커밋하면 자동 반영",
-  "members": [
+  "_comment": "용병 목록 — 각 캐릭터가 초급~태초까지 모든 등급 존재, 10개 합성 → 다음 등급",
+  "characters": [
     {
-      "name": "조주빈",
-      "grade": "초급",
-      "baseSkillPower": 5,
+      "id": "판돌",
+      "name": "김판돌",
+      "role": "⚔️ 공격대장",
+      "trait": "공격보조 전문. 팀의 화력을 극대화한다.",
       "skill": "atkBuff",
-      "skillDesc": "20% 확률 발동 - 다음 공격 데미지 +20%"
+      "grades": [
+        { "grade": "초급", "baseSkillPower": 5,   "skillDesc": "15% 확률 — 내 공격력 +15%" },
+        { "grade": "중급", "baseSkillPower": 12,  "skillDesc": "18% 확률 — 내 공격력 +20%" },
+        { "grade": "고급", "baseSkillPower": 25,  "skillDesc": "22% 확률 — 내 공격력 +28%" },
+        { "grade": "영웅", "baseSkillPower": 50,  "skillDesc": "25% 확률 — 내 공격력 +38%" },
+        { "grade": "전설", "baseSkillPower": 90,  "skillDesc": "28% 확률 — 내 공격력 +50%" },
+        { "grade": "신화", "baseSkillPower": 160, "skillDesc": "32% 확률 — 내 공격력 +65%" },
+        { "grade": "태초", "baseSkillPower": 300, "skillDesc": "38% 확률 — 내 공격력 +85% + 크리티컬 확률 +20%" }
+      ]
     },
     {
-      "name": "홍명보",
-      "grade": "중급",
-      "baseSkillPower": 10,
+      "id": "나칼치",
+      "name": "나칼치",
+      "role": "🛡️ 철벽방패",
+      "trait": "방어전문가. 보스의 일격을 홀로 버텨낸다.",
       "skill": "defBuff",
-      "skillDesc": "20% 확률 발동 - 이번 턴 받는 데미지 -30%"
+      "grades": [
+        { "grade": "초급", "baseSkillPower": 5,   "skillDesc": "15% 확률 — 받는 피해 -20%" },
+        { "grade": "중급", "baseSkillPower": 12,  "skillDesc": "18% 확률 — 받는 피해 -28%" },
+        { "grade": "고급", "baseSkillPower": 25,  "skillDesc": "22% 확률 — 받는 피해 -36%" },
+        { "grade": "영웅", "baseSkillPower": 50,  "skillDesc": "25% 확률 — 받는 피해 -44%" },
+        { "grade": "전설", "baseSkillPower": 90,  "skillDesc": "28% 확률 — 받는 피해 -52%" },
+        { "grade": "신화", "baseSkillPower": 160, "skillDesc": "32% 확률 — 받는 피해 -60%" },
+        { "grade": "태초", "baseSkillPower": 300, "skillDesc": "38% 확률 — 받는 피해 -70% + 반격 피해 +30%" }
+      ]
     },
     {
-      "name": "김정은",
-      "grade": "고급",
-      "baseSkillPower": 20,
+      "id": "최씨",
+      "name": "도끼눈 최씨",
+      "role": "💚 야전의무관",
+      "trait": "전장 치료 전문. 버텨야 이긴다.",
       "skill": "heal",
-      "skillDesc": "25% 확률 발동 - HP 15% 회복"
+      "grades": [
+        { "grade": "초급", "baseSkillPower": 5,   "skillDesc": "15% 확률 — HP +8% 회복" },
+        { "grade": "중급", "baseSkillPower": 12,  "skillDesc": "18% 확률 — HP +12% 회복" },
+        { "grade": "고급", "baseSkillPower": 25,  "skillDesc": "22% 확률 — HP +16% 회복" },
+        { "grade": "영웅", "baseSkillPower": 50,  "skillDesc": "25% 확률 — HP +20% 회복" },
+        { "grade": "전설", "baseSkillPower": 90,  "skillDesc": "28% 확률 — HP +25% 회복" },
+        { "grade": "신화", "baseSkillPower": 160, "skillDesc": "32% 확률 — HP +32% 회복" },
+        { "grade": "태초", "baseSkillPower": 300, "skillDesc": "38% 확률 — HP +40% 회복 + 마력 +8 회복" }
+      ]
     },
     {
-      "name": "김일성",
-      "grade": "영웅",
-      "baseSkillPower": 40,
+      "id": "흑룡강",
+      "name": "흑룡 강",
+      "role": "🎯 급소사냥꾼",
+      "trait": "크리티컬 전문. 급소를 꿰뚫는 일격의 달인.",
       "skill": "critUp",
-      "skillDesc": "25% 확률 발동 - 다음 공격 크리티컬 100%"
+      "grades": [
+        { "grade": "영웅", "baseSkillPower": 45,  "skillDesc": "22% 확률 — 다음 공격 크리티컬 확정 + 크리피해 +20%" },
+        { "grade": "전설", "baseSkillPower": 85,  "skillDesc": "26% 확률 — 다음 공격 크리티컬 확정 + 크리피해 +35%" },
+        { "grade": "신화", "baseSkillPower": 155, "skillDesc": "30% 확률 — 다음 공격 크리티컬 확정 + 크리피해 +55%" },
+        { "grade": "태초", "baseSkillPower": 290, "skillDesc": "36% 확률 — 2턴 연속 크리티컬 확정 + 크리피해 +80%" }
+      ]
     },
     {
-      "name": "이은해",
-      "grade": "전설",
-      "baseSkillPower": 80,
+      "id": "백호백작",
+      "name": "백호 백작",
+      "role": "🗡️ 갑옷꿰뚫기",
+      "trait": "방어 무시 전문. 어떤 방어도 소용없다.",
       "skill": "pierce",
-      "skillDesc": "30% 확률 발동 - 다음 공격 방어무시(관통)"
+      "grades": [
+        { "grade": "전설", "baseSkillPower": 80,  "skillDesc": "25% 확률 — 이번 공격 방어 무시 + 추가 피해 +15%" },
+        { "grade": "신화", "baseSkillPower": 150, "skillDesc": "30% 확률 — 이번 공격 방어 무시 + 추가 피해 +30%" },
+        { "grade": "태초", "baseSkillPower": 290, "skillDesc": "36% 확률 — 이번 공격 방어 무시 + 추가 피해 +50% + 저주 부여" }
+      ]
     },
     {
-      "name": "전청조",
-      "grade": "신화",
-      "baseSkillPower": 150,
+      "id": "무당벌레",
+      "name": "무당벌레",
+      "role": "⚡ 잔영의무사",
+      "trait": "연속 공격 전문. 순식간에 적을 난도질한다.",
       "skill": "doubleAtk",
-      "skillDesc": "30% 확률 발동 - 이번 턴 2회 공격"
+      "grades": [
+        { "grade": "신화", "baseSkillPower": 150, "skillDesc": "28% 확률 — 이번 턴 2회 공격" },
+        { "grade": "태초", "baseSkillPower": 300, "skillDesc": "34% 확률 — 이번 턴 3회 공격 + 각 타격 크리티컬 +15%" }
+      ]
     },
     {
-      "name": "조희팔",
-      "grade": "태초",
-      "baseSkillPower": 300,
+      "id": "지배자",
+      "name": "검은 지배자",
+      "role": "🌌 혼돈의 화신",
+      "trait": "만능 최강자. 진명해방으로 전장을 지배한다.",
       "skill": "ultimate",
-      "skillDesc": "35% 확률 발동 - 강력한 진명해방 (관통+2회공격+회복)"
+      "grades": [
+        { "grade": "태초", "baseSkillPower": 350, "skillDesc": "32% 확률 — 진명해방: 방어무시+3회공격+HP20%회복+마력+15 동시 발동" }
+      ]
     }
   ],
+  "mercenaryBonusRate": 0.01,
+  "synthesisCount": 10,
   "skillRates": {
-    "atkBuff": 20, "defBuff": 20, "heal": 25,
-    "critUp": 25, "pierce": 30, "doubleAtk": 30, "ultimate": 35
+    "atkBuff": 15, "defBuff": 15, "heal": 15,
+    "critUp": 22, "pierce": 25, "doubleAtk": 28, "ultimate": 32
   }
 }
