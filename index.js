@@ -13,16 +13,23 @@ const CONFIG_FILE  = path.join(__dirname, 'config.json');
 // ── 외부 데이터 파일 경로 (GitHub에서 수정 → 자동 반영)
 const DATA_DIR = __dirname;
 const DATA_FILES = {
-    balance:     path.join(DATA_DIR, 'data_balance.json'),
-    mercenaries: path.join(DATA_DIR, 'data_mercenaries.json'),
-    bosses:      path.join(DATA_DIR, 'data_bosses.json'),
-    hunting:     path.join(DATA_DIR, 'data_hunting.json'),
-    magic:       path.join(DATA_DIR, 'data_magic.json'),
-    skills:      path.join(DATA_DIR, 'data_skills.json'),
+    balance:        path.join(DATA_DIR, 'data_balance.json'),
+    mercenaries:    path.join(DATA_DIR, 'data_mercenaries.json'),
+    bosses:         path.join(DATA_DIR, 'data_bosses.json'),
+    hunting:        path.join(DATA_DIR, 'data_hunting.json'),
+    magic:          path.join(DATA_DIR, 'data_magic.json'),
+    skills:         path.join(DATA_DIR, 'data_skills.json'),
+    equipmentNames: path.join(DATA_DIR, 'data_equipment_names.json'),
 };
 
 // 전역 DATA 객체 — 모든 게임 데이터는 이걸 참조
 let DATA = {};
+
+// 용병 합성 체인 (charId:grade → nextGrade) — applyDataToConstants에서 채워짐
+const MERCENARY_SYNTH_CHAIN = new Map();
+
+// 장비 이름 테이블 — applyDataToConstants에서 채워짐
+let EQUIPMENT_NAME_TABLE = {};
 
 function loadDataFile(key) {
     try {
@@ -76,21 +83,56 @@ function applyDataToConstants() {
         }
     }
 
-    // 용병
+    // 용병 — 새 구조: characters 배열, 각 캐릭터가 등급별 여러 레코드
     const m = DATA.mercenaries;
-    if (m && m.members) {
+    if (m && m.characters) {
+        for (const k of Object.keys(PARTY_MEMBERS)) delete PARTY_MEMBERS[k];
+        for (const char of m.characters) {
+            for (const gd of (char.grades || [])) {
+                const key = `${char.name}(${gd.grade})`;
+                PARTY_MEMBERS[key] = {
+                    charId: char.id,
+                    name: char.name,
+                    grade: gd.grade,
+                    role: char.role,
+                    trait: char.trait,
+                    baseSkillPower: gd.baseSkillPower,
+                    skill: char.skill,
+                    skillDesc: gd.skillDesc
+                };
+            }
+        }
+        // 합성 체인: 같은 charId의 다음 등급으로
+        MERCENARY_SYNTH_CHAIN.clear();
+        for (const char of m.characters) {
+            const grades = char.grades.map(g => g.grade);
+            for (let i = 0; i < grades.length - 1; i++) {
+                MERCENARY_SYNTH_CHAIN.set(`${char.id}:${grades[i]}`, grades[i+1]);
+            }
+        }
+    } else if (m && m.members) {
+        // 하위 호환: 구 형식
         for (const k of Object.keys(PARTY_MEMBERS)) delete PARTY_MEMBERS[k];
         for (const mem of m.members) {
             PARTY_MEMBERS[mem.name] = {
-                grade: mem.grade,
-                baseSkillPower: mem.baseSkillPower,
-                skill: mem.skill,
-                skillDesc: mem.skillDesc
+                grade: mem.grade, baseSkillPower: mem.baseSkillPower,
+                skill: mem.skill, skillDesc: mem.skillDesc
             };
         }
     }
 
-    // 보스
+    // 스킬 — 트리 구조
+    const sk = DATA.skills;
+    if (sk && sk.skills) {
+        for (const k of Object.keys(SKILL_BOOKS)) delete SKILL_BOOKS[k];
+        for (const s of sk.skills) SKILL_BOOKS[s.name] = s;
+    }
+
+    // 장비 이름 테이블
+    const en = DATA.equipmentNames;
+    if (en) {
+        Object.assign(EQUIPMENT_NAME_TABLE, en);
+    }
     const bd = DATA.bosses;
     if (bd && bd.bosses) {
         RAID_BOSSES.length = 0;
@@ -127,13 +169,6 @@ function applyDataToConstants() {
         for (const sp of MAGIC_BOOKS) {
             if (sp.evolves) MAGIC_EVOLUTION_CHAIN[sp.id] = sp.evolves;
         }
-    }
-
-    // 스킬
-    const sk = DATA.skills;
-    if (sk && sk.skills) {
-        for (const k of Object.keys(SKILL_BOOKS)) delete SKILL_BOOKS[k];
-        for (const s of sk.skills) SKILL_BOOKS[s.name] = s;
     }
 
     // CONFIG 보조 값도 balance.game에서 덮어쓰기
@@ -505,16 +540,22 @@ function nextEquipId() {
 // slotType: 'weapon' | 'armor' | 'shield' | 'ring' (반지는 장착시 ring1/ring2 선택)
 function createEquipmentItem(slotType, grade) {
     let atk = 0, def = 0, hp = 0, name = '';
+
+    // 이름 테이블에서 랜덤 선택
+    const namePool = (EQUIPMENT_NAME_TABLE[slotType] || {})[grade];
+    const baseName = namePool ? namePool[Math.floor(Math.random() * namePool.length)]
+        : `${grade} ${slotType === 'weapon' ? '무기' : slotType === 'armor' ? '방어구' : slotType === 'shield' ? '방패' : '반지'}`;
+
     if (slotType === 'weapon') {
         atk = WEAPON_ATK[grade] || 0;
-        name = `${grade} 무기`;
+        name = baseName;
     } else if (slotType === 'armor') {
         def = ARMOR_DEF[grade] || 0;
         hp  = ARMOR_HP[grade] || 0;
-        name = `${grade} 방어구`;
+        name = baseName;
     } else if (slotType === 'shield') {
         def = SHIELD_DEF[grade] || 0;
-        name = `${grade} 방패`;
+        name = baseName;
     } else if (slotType === 'ring') {
         const pool = ['atk', 'def', 'hp'];
         const dual = Math.random() < 0.35;
@@ -525,13 +566,16 @@ function createEquipmentItem(slotType, grade) {
         for (const stat of picks) {
             if (stat === 'atk') atk += Math.round(per);
             else if (stat === 'def') def += Math.round(per);
-            else hp += Math.round(per * 5); // HP는 체감상 크게
+            else hp += Math.round(per * 5);
         }
-        const labelMap = { atk: '공격', def: '방어', hp: '체력' };
-        name = `${grade} 반지(${picks.map(p => labelMap[p]).join('/')})`;
+        name = baseName;
     }
+
     const effect = rollEquipmentEffect(slotType, grade);
-    if (effect) name += ` [${effect.label}]`;
+    if (effect) {
+        const suffix = (EQUIPMENT_NAME_TABLE.effectSuffix || {})[effect.id];
+        name = suffix ? `${suffix}${name}` : `${name}[${effect.label}]`;
+    }
     return { id: nextEquipId(), slotType, grade, name, atk, def, hp, enhanceLevel: 0, broken: false, effect };
 }
 
@@ -591,20 +635,42 @@ function rollEquipmentBox(boxType) {
     return createEquipmentItem(slotType, grade);
 }
 
-const MERCENARY_BONUS_RATE = 0.01; // % — 상자 등급 용병은 항상 확정, 그 위 등급 용병이 추가로 나올 확률
+const MERCENARY_BONUS_RATE = 0.01;
 function rollMercenaryBox(boxType) {
     const grade = boxType.replace('용병상자', '');
     const gradeIdx = EQUIP_GRADES.indexOf(grade);
-    const nameOf = (g) => Object.keys(PARTY_MEMBERS).find(n => PARTY_MEMBERS[n].grade === g);
-    const base = nameOf(grade);
-    if (!base) return null;
+    const eligible = Object.keys(PARTY_MEMBERS).filter(k => PARTY_MEMBERS[k].grade === grade);
+    if (eligible.length === 0) return null;
+    const base = eligible[Math.floor(Math.random() * eligible.length)];
     let bonus = null;
     if (gradeIdx >= 0 && gradeIdx < EQUIP_GRADES.length - 1) {
         if (Math.random() * 100 < MERCENARY_BONUS_RATE) {
-            bonus = nameOf(EQUIP_GRADES[gradeIdx + 1]);
+            const nextGrade = EQUIP_GRADES[gradeIdx + 1];
+            const nextEligible = Object.keys(PARTY_MEMBERS).filter(k => PARTY_MEMBERS[k].grade === nextGrade);
+            if (nextEligible.length > 0) bonus = nextEligible[Math.floor(Math.random() * nextEligible.length)];
         }
     }
     return { base, bonus };
+}
+
+// 용병 합성: 같은 캐릭터+등급 10개 → 다음 등급 1개
+function checkMercenaryEvolution(user) {
+    const msgs = [];
+    const synthCount = DATA.mercenaries?.synthesisCount || 10;
+    for (const [fullKey, p] of Object.entries(user.partyMembers || {})) {
+        const pm = PARTY_MEMBERS[fullKey];
+        if (!pm || !pm.charId) continue;
+        const nextGrade = MERCENARY_SYNTH_CHAIN.get(`${pm.charId}:${pm.grade}`);
+        if (!nextGrade) continue;
+        while ((p.count || 0) >= synthCount) {
+            p.count -= synthCount;
+            const nextKey = `${pm.name}(${nextGrade})`;
+            if (!user.partyMembers[nextKey]) user.partyMembers[nextKey] = { count: 0, level: 0 };
+            user.partyMembers[nextKey].count += 1;
+            msgs.push(`✨ 합성! ${fullKey} ×${synthCount} → ${nextKey}`);
+        }
+    }
+    return msgs;
 }
 
 // 판매가 (등급/부위 기준 골드 환산)
@@ -3439,14 +3505,25 @@ server.on('message', (msg, rinfo) => {
         // Phase 5: 스킬북 시스템
         // ══════════════════════════════════════════════
         if (cmd === '!스킬목록') {
-            let m = `📖 [스킬북 목록]\n─────────────────────\n`;
+            const SERIES_LABEL = { attack: '⚔️ 공격', defense: '🛡️ 방어', vitality: '❤️ 체력', combat: '✨ 전투' };
+            const grouped = {};
             for (const [name, sk] of Object.entries(SKILL_BOOKS)) {
-                const owned = (user.skills || []).includes(name);
-                m += `${EQUIP_GRADE_EMOJI[sk.grade]||''}[${sk.grade}] ${name}${owned ? ' ✅' : ''}\n`;
-                m += `   ㄴ ${sk.desc}\n`;
-                m += `   ㄴ 소울 ${sk.cost.souls}개 / ${formatKRW(sk.cost.gold)}\n`;
+                const s = sk.series || 'other';
+                if (!grouped[s]) grouped[s] = [];
+                grouped[s].push([name, sk]);
             }
-            m += `─────────────────────\n!스킬습득 [스킬이름] — 구매 및 즉시 적용`;
+            let m = `📖 [스킬 목록]\n─────────────────────\n`;
+            for (const [series, list] of Object.entries(grouped)) {
+                m += `\n${SERIES_LABEL[series]||series} 계열\n`;
+                list.sort((a,b) => (a[1].tier||0)-(b[1].tier||0)).forEach(([name, sk]) => {
+                    const owned = (user.skills||[]).includes(name);
+                    const locked = sk.requires && !(user.skills||[]).includes(sk.requires);
+                    m += `  ${locked ? '🔒' : owned ? '✅' : '  '}${EQUIP_GRADE_EMOJI[sk.grade]||''}${name}${sk.requires ? ` (필요: ${sk.requires})` : ''}\n`;
+                    m += `     ${sk.desc}\n`;
+                    m += `     소울 ${sk.cost.souls} / ${formatKRW(sk.cost.gold)}\n`;
+                });
+            }
+            m += `─────────────────────\n!스킬습득 [이름]`;
             return reply(m);
         }
 
@@ -3466,20 +3543,25 @@ server.on('message', (msg, rinfo) => {
             if (args.length < 1) return reply('❌ !스킬습득 [스킬이름]');
             const skillName = args.join(' ');
             const sk = SKILL_BOOKS[skillName];
-            if (!sk) return reply(`❌ 존재하지 않는 스킬: ${skillName}\n!스킬목록 참고`);
-            if ((user.skills || []).includes(skillName)) return reply(`❌ 이미 습득한 스킬입니다: ${skillName}`);
-            if ((user.souls || 0) < sk.cost.souls) return reply(`❌ 소울 부족 (필요: ${sk.cost.souls}개, 보유: ${user.souls || 0}개)\n💡 소울은 레이드 클리어 시 획득합니다.`);
+            if (!sk) return reply(`❌ 없는 스킬: ${skillName}\n!스킬목록 참고`);
+            if ((user.skills||[]).includes(skillName)) return reply(`❌ 이미 습득: ${skillName}`);
+            // 선행 스킬 체크
+            if (sk.requires && !(user.skills||[]).includes(sk.requires))
+                return reply(`❌ 선행 스킬 필요: 「${sk.requires}」\n!스킬목록 에서 순서 확인`);
+            // 같은 계열 상위 스킬 중복 방지 (패시브만)
+            if (sk.type === 'passive' && sk.stat) {
+                const sameSeries = Object.entries(SKILL_BOOKS)
+                    .filter(([n, s]) => s.series === sk.series && s.tier > sk.tier && (user.skills||[]).includes(n));
+                if (sameSeries.length > 0) return reply(`❌ 이미 상위 스킬 보유: ${sameSeries[0][0]}`);
+            }
+            if ((user.souls||0) < sk.cost.souls) return reply(`❌ 소울 부족 (필요: ${sk.cost.souls}, 보유: ${user.souls||0})\n💡 레이드 클리어 시 획득`);
             if (user.points < sk.cost.gold) return reply(`❌ 골드 부족 (필요: ${formatKRW(sk.cost.gold)})`);
-            user.souls  -= sk.cost.souls;
+            user.souls -= sk.cost.souls;
             user.points -= sk.cost.gold;
             if (!user.skills) user.skills = [];
             user.skills.push(skillName);
             saveData(db);
-            return reply(
-                `📖 [스킬 습득 완료] ${EQUIP_GRADE_EMOJI[sk.grade]||''}${skillName}\n` +
-                `${sk.desc}\n소모: 소울 ${sk.cost.souls}개 / ${formatKRW(sk.cost.gold)}\n` +
-                `남은 소울: ${user.souls}개\n잔액: ${formatKRW(user.points)}`
-            );
+            return reply(`📖 [스킬 습득] ${EQUIP_GRADE_EMOJI[sk.grade]||''}${skillName}\n${sk.desc}\n소울 ${sk.cost.souls} / ${formatKRW(sk.cost.gold)} 소모\n남은 소울: ${user.souls}`);
         }
 
         // ══════════════════════════════════════════════
@@ -3768,142 +3850,274 @@ server.on('message', (msg, rinfo) => {
             return reply(m);
         }
 
-        // 레이드 중 행동 명령어 (확장: !공격 !강공 !방어 !회피 !방해 !후퇴)
-        if (['!공격','!강공','!방어','!회피','!방해','!마법1','!마법2','!후퇴'].includes(cmd)) {
+        // ══════════════════════════════════════════════════════
+        // 레이드 동시 선택 방식
+        // 플레이어: !공격 !방어 !회피 !방해 !마법1 !마법2 !후퇴
+        // 보스: 공격/방어 중 랜덤 선택 → 동시 공개 → 조합으로 결과
+        // ══════════════════════════════════════════════════════
+        if (['!공격','!방어','!회피','!방해','!마법1','!마법2','!후퇴'].includes(cmd)) {
             const sessionKey = `${room}:${sender}`;
-            const session = raidSessions[sessionKey];
-
-            // 1분 타임아웃: 다른 사람 세션 만료 체크도 겸용
             for (const [key, s] of Object.entries(raidSessions)) {
                 if (Date.now() - (s.lastActionAt || s.startedAt || 0) > (CONFIG._raidTimeoutMs || 30000)) {
                     delete raidSessions[key];
                 }
             }
-
-            if (!session) return reply('❌ 진행 중인 레이드가 없습니다. !레이드 [보스이름] 으로 시작하세요.');
+            const session = raidSessions[sessionKey];
+            if (!session) return reply('❌ 진행 중인 레이드가 없습니다. !레이드 [보스이름] 으로 시작');
 
             if (cmd === '!후퇴') {
                 delete raidSessions[sessionKey];
-                return reply('🏳️ 레이드에서 후퇴했습니다. (쿨타임 없이 재시도 가능)');
+                return reply('🏳️ 후퇴. 쿨타임 없이 재도전 가능');
             }
 
-            session.turn++;
-            session.lastActionAt = Date.now();
-
-            // 행동 → 내부 액션 문자열
-
-            // 마법 퀵슬롯 (!마법1 / !마법2) — 마력만 소비, 마법서 소모 없음
+            // !마법1 / !마법2 처리
             if (cmd === '!마법1' || cmd === '!마법2') {
                 const slotIdx = cmd === '!마법1' ? 0 : 1;
                 const slotId = (user.spellSlots||[null,null])[slotIdx];
                 if (!slotId) return reply(`❌ 슬롯${slotIdx+1} 비어있음\n!마법장착 ${slotIdx+1} [마법이름]`);
                 const spell = getMagicBook(slotId);
                 if (!spell) return reply('❌ 슬롯 마법 오류. 재장착 필요');
-                if ((session.mana||0) < spell.mana) return reply(`❌ 마력 부족 (필요:${spell.mana} / 현재:${session.mana||0})\n매 턴 1씩 회복`);
+                if ((session.mana||0) < spell.mana) return reply(`❌ 마력 부족 (필요:${spell.mana} / 현재:${session.mana||0})\n매 턴 회복`);
+                // 마법 행동으로 처리
+                return processCombatAction(session, 'magic', spell, user, sessionKey);
+            }
 
-                session.mana -= spell.mana;
-                const magicDmg = Math.floor(session.stat.atk * spell.dmgMult);
-                const doomBonus = spell.effect === 'doom' ? Math.floor(session.bossHp * 0.15) : 0;
-                const holyMult  = (spell.effect === 'holy_full' && session.enraged) ? 2 : 1;
-                const totalSpellDmg = (magicDmg + doomBonus) * holyMult;
-                session.bossHp = Math.max(0, session.bossHp - totalSpellDmg);
-                const slog = [`${spell.element}[${spell.name}] ${totalSpellDmg} 피해${doomBonus>0?' +소멸':''}${holyMult>1?' ×2':''}`];
-                applyMagicEffect(spell, session, slog);
+            const actionMap = { '!공격': 'attack', '!방어': 'defend', '!회피': 'evade', '!방해': 'interrupt' };
+            return processCombatAction(session, actionMap[cmd] || 'attack', null, user, sessionKey);
 
-                if (session.bossHp <= 0) {
-                    delete raidSessions[`${room}:${sender}`];
-                    user.bossKills = user.bossKills||{};
-                    user.bossKills[session.boss.name] = (user.bossKills[session.boss.name]||0)+1;
-                    user.points += session.boss.gold;
-                    user.stones = (user.stones||0)+session.boss.stones;
-                    user.souls  = (user.souls||0)+session.boss.souls;
-                    if (Math.random()<0.25){const si=rollSpellDrop(Math.min(4,Math.max(1,Math.ceil((EQUIP_GRADES.indexOf(session.boss.grade)+1)/2))));if(si){if(!user.spells)user.spells=[];user.spells.push(si);slog.push(`🔮 드랍: ${getMagicBook(si)?.name}`);}}
-                    const emR=checkMagicEvolution(user); saveData(db);
-                    let m=`${spell.element}[${spell.name}]\n${slog.join('\n')}\n${hpBar(0,session.boss.maxHp,true)}\n🎉 [${session.boss.name} 처치!]\n골드+${formatKRW(session.boss.gold)} / 강화석+${session.boss.stones} / 소울+${session.boss.souls}`;
-                    if(emR.length) m+='\n'+emR.join('\n');
-                    return reply(m);
+            function processCombatAction(session, playerAction, spell, user, sessionKey) {
+                const boss = session.boss;
+                const log = [];
+
+                // 마력 회복
+                const { regen: manaRegen } = calcManaFromEquip(user.equipment);
+                session.mana = Math.min(session.maxMana, (session.mana||0) + 1 + manaRegen);
+
+                // debuff 틱
+                if (!session.bossDebuffs) session.bossDebuffs = [];
+                tickBossDebuffs(session, log);
+                if (session.bossHp <= 0) return finishRaid('win', session, sessionKey, user, log, null, null);
+
+                // 보스 행동 결정 — HP 낮으면 공격 편향, 광폭화 시 항상 공격
+                let bossAction;
+                if (session.enraged) {
+                    bossAction = 'attack';
+                } else if (session.bossHp < boss.maxHp * 0.3) {
+                    bossAction = Math.random() < 0.8 ? 'attack' : 'defend';
+                } else {
+                    // 회복 시도 확률
+                    const healTry = !session.bossHealBlocked && session.bossHp < boss.maxHp * 0.5 && Math.random() < 0.15;
+                    bossAction = healTry ? 'heal' : (Math.random() < 0.6 ? 'attack' : 'defend');
+                }
+                session.bossHealBlocked = false;
+
+                // 광폭화 확인
+                if (session.bossHp <= Math.floor(boss.maxHp * boss.enrageHp) && !session.enraged) {
+                    session.enraged = true;
+                    log.push(`💢 [광폭화!!] ${boss.name} 이(가) 분노했습니다!`);
                 }
 
-                const bossAtk2 = Math.floor(session.boss.atk*(session.enraged?session.boss.enrageAtkMult:1));
-                if(!(session.bossDebuffs||[]).some(d=>d.type==='freeze')){session.hp-=bossAtk2;slog.push(`👹 보스:${bossAtk2}`);}
-                else slog.push(`❄️ 빙결! 봉인`);
-                if(Math.random()<0.35){const np=rollBossPattern();session.pendingPattern=np;slog.push(`\n⚠️ ${np.announce}`);}
-                session.turn++; session.lastActionAt=Date.now();
-                if(session.hp<=0){
-                    const eq2=['weapon','armor','shield','ring1','ring2'].filter(s=>user.equipment[s]&&!user.equipment[s].broken);
-                    if(eq2.length>0){const sl=eq2[Math.floor(Math.random()*eq2.length)];user.equipment[sl].broken=true;slog.push(`💥 "${user.equipment[sl].name}" 파손!`);}
-                    delete raidSessions[`${room}:${sender}`];
+                const critChance   = getEquipmentEffectValue(user, 'crit');
+                const critDmgBonus = getEquipmentEffectValue(user, 'critdmg') / 100;
+                const piercePct    = getEquipmentEffectValue(user, 'pierce') / 100;
+                const bossDmgBonus = getEquipmentEffectValue(user, 'bossdmg') / 100;
+                const lifestealPct = getEquipmentEffectValue(user, 'lifesteal') / 100;
+                const thornsPct    = getEquipmentEffectValue(user, 'thorns') / 100;
+                const dodgePct     = getEquipmentEffectValue(user, 'dodge');
+                const regenPct     = getEquipmentEffectValue(user, 'regen');
+                const guardPct     = getEquipmentEffectValue(user, 'guard') / 100;
+
+                const stat = calcCharacterStat(user);
+                const skills = applyPartySkillsRaid(user, session);
+
+                // 스킬북 효과
+                if (skills.ultimate) { skills.crit=true; skills.pierce=true; skills.doubleAtk=true; skills.healRatio+=0.1; log.push(`🌌 진명해방!`); }
+                if ((user.skills||[]).includes('용의 피')) { const r=Math.floor(session.maxHp*0.02); session.hp=Math.min(session.maxHp,session.hp+r); log.push(`🐉 용의 피: +${r}HP`); }
+                if (regenPct > 0) { const r=Math.floor(session.maxHp*regenPct/100); session.hp=Math.min(session.maxHp,session.hp+r); log.push(`💧 재생: +${r}HP`); }
+
+                log.push(`──────────`);
+                log.push(`🧑 나의 행동: ${{'attack':'⚔️ 공격','defend':'🛡️ 방어','evade':'💨 회피','interrupt':'🚫 방해','magic':'🔮 마법'}[playerAction]||playerAction}`);
+                log.push(`👹 보스 행동: ${{'attack':'⚔️ 공격','defend':'🛡️ 방어','heal':'💉 회복'}[bossAction]||bossAction}`);
+                log.push(`──────────`);
+
+                // ── 행동 조합 결과 ──
+                let playerDmg = 0, bossDmgToPlayer = 0;
+                let magicPierce = false;
+
+                if (playerAction === 'magic' && spell) {
+                    // 마법: 방어 무시 (보스 방어 행동 무력화), 마력 소비
+                    session.mana -= spell.mana;
+                    const doomBonus = spell.effect === 'doom' ? Math.floor(session.bossHp * 0.15) : 0;
+                    const holyMult  = (spell.effect === 'holy_full' && session.enraged) ? 2 : 1;
+                    playerDmg = Math.floor(stat.atk * spell.dmgMult * (1 + bossDmgBonus)) * holyMult + doomBonus;
+                    magicPierce = true;
+                    log.push(`${spell.element}[${spell.name}] ${playerDmg} 마법 피해 (방어 무시)`);
+                    applyMagicEffect(spell, session, log);
+                    // 보스가 공격했으면 양측 피해
+                    if (bossAction === 'attack') {
+                        const bAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
+                        bossDmgToPlayer = Math.max(1, Math.floor(bAtk * (1-guardPct)));
+                        log.push(`👹 공격 동시 발동 → 나 ${bossDmgToPlayer} 피해`);
+                    } else {
+                        log.push(`👹 방어/회복 → 보스 피해 없음 (마법은 방어 무시)`);
+                    }
+                } else if (playerAction === 'attack') {
+                    const isCrit = session.nextCritGuaranteed || skills.crit || Math.random()*100 < critChance;
+                    if (session.nextCritGuaranteed) session.nextCritGuaranteed = false;
+                    const hasPierce = (user.skills||[]).some(s => SKILL_BOOKS[s]?.effect === 'pierce100');
+                    const defDownPct = session.bossDebuffs.filter(d=>d.type==='defDown').reduce((s,d)=>s+d.value,0)/100;
+                    const effDef = (session.bossDebuffs.some(d=>d.type==='pierce100'||d.type==='electrify')) ? 0 :
+                        Math.max(0, boss.def * (1-piercePct-defDownPct) * (1-(skills.pierce?1:0)));
+                    let atk = stat.atk * skills.atkMult * (1+bossDmgBonus);
+                    if ((user.skills||[]).includes('강철 의지') && session.hp<=session.maxHp*0.2) { atk*=1.35; log.push(`🔥 불굴의 의지!`); }
+                    const hits = skills.doubleAtk ? 2 : 1;
+
+                    if (bossAction === 'defend') {
+                        // 내 공격 ↔ 보스 방어: 피해 70% 감소
+                        playerDmg = Math.max(0, Math.floor((atk - effDef * 1.5) * (isCrit ? 1.5+critDmgBonus : 1) * hits * 0.3));
+                        log.push(`⚔️ vs 🛡️ → 막혔습니다. 감소 피해 ${playerDmg}${isCrit?' (크리!)':''}`);
+                    } else if (bossAction === 'attack') {
+                        // 양측 공격: 둘 다 맞음
+                        playerDmg = Math.max(1, Math.floor((atk - effDef) * (isCrit ? 1.5+critDmgBonus : 1) * hits));
+                        const bAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
+                        bossDmgToPlayer = Math.max(1, Math.floor(bAtk * (1-guardPct)));
+                        log.push(`⚔️ vs ⚔️ → 나 ${playerDmg}${isCrit?' (크리!)':''} / 보스 ${bossDmgToPlayer} 피해 (양측)`);
+                    } else {
+                        // 보스 회복 시도 → 내 공격 정상
+                        playerDmg = Math.max(1, Math.floor((atk - effDef) * (isCrit ? 1.5+critDmgBonus : 1) * hits));
+                        log.push(`⚔️ vs 💉 → ${playerDmg}${isCrit?' (크리!)':''} 피해 + 회복 차단!`);
+                        bossAction = 'healed_but_hit';
+                    }
+                } else if (playerAction === 'defend') {
+                    if (bossAction === 'attack') {
+                        const bAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
+                        bossDmgToPlayer = Math.max(0, Math.floor(bAtk * (1-guardPct) * 0.35));
+                        log.push(`🛡️ vs ⚔️ → 방어! 피해 65% 감소 → ${bossDmgToPlayer}`);
+                    } else if (bossAction === 'defend') {
+                        log.push(`🛡️ vs 🛡️ → 양측 피해 0. 소강상태`);
+                    } else {
+                        log.push(`🛡️ vs 💉 → 회복 차단!`);
+                        bossAction = 'healed_but_blocked';
+                    }
+                } else if (playerAction === 'evade') {
+                    if (bossAction === 'attack') {
+                        const evasionRoll = Math.random()*100;
+                        const evasionChance = 55 + dodgePct;
+                        if (evasionRoll < evasionChance) {
+                            log.push(`💨 vs ⚔️ → 회피 성공! (${Math.round(evasionChance)}%)`);
+                        } else {
+                            const bAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
+                            bossDmgToPlayer = Math.max(1, Math.floor(bAtk * (1-guardPct)));
+                            log.push(`💨 vs ⚔️ → 회피 실패! ${bossDmgToPlayer} 피해`);
+                        }
+                    } else {
+                        log.push(`💨 vs 🛡️/💉 → 보스도 관망. 이번 턴 피해 없음`);
+                    }
+                } else if (playerAction === 'interrupt') {
+                    if (bossAction === 'heal') {
+                        log.push(`🚫 vs 💉 → 방해 성공! 회복 완전 차단`);
+                        session.bossHealBlocked = true;
+                        // 약간의 추가 피해
+                        playerDmg = Math.floor(stat.atk * 0.5);
+                        log.push(`   추가 피해: ${playerDmg}`);
+                    } else if (bossAction === 'attack') {
+                        const bAtk = Math.floor(boss.atk * (session.enraged ? boss.enrageAtkMult : 1));
+                        bossDmgToPlayer = Math.max(1, Math.floor(bAtk * (1-guardPct)));
+                        playerDmg = Math.floor(stat.atk * 0.4);
+                        log.push(`🚫 vs ⚔️ → 방해 실패 (보스 공격 중) 양측 피해: 나${bossDmgToPlayer} / 보스${playerDmg}`);
+                    } else {
+                        log.push(`🚫 vs 🛡️ → 방어 중인 보스 방해. 효과 없음`);
+                    }
                 }
-                saveData(db);
-                let m=`${spell.element}[마법${slotIdx+1}:${spell.name}] 턴${session.turn}\n${slog.join('\n')}\n─────────────────────\n`;
-                m+=`👹${session.enraged?' 💢':''}\n${hpBar(session.bossHp,session.boss.maxHp,session.enraged)}\n❤️\n${hpBar(Math.max(0,session.hp),session.maxHp)}\n💧${session.mana}/${session.maxMana}\n`;
-                m+=session.hp<=0?'💀 패배':'\n!공격 !강공 !방어 !회피 !방해 !마법1 !마법2 !후퇴';
+
+                // 가시 반격
+                if (thornsPct > 0 && bossDmgToPlayer > 0) {
+                    const thorns = Math.floor(boss.atk * thornsPct);
+                    playerDmg += thorns;
+                    log.push(`🌵 반격: +${thorns} 추가 피해`);
+                }
+
+                // 회복 처리
+                if (bossAction === 'heal' && !session.bossHealBlocked) {
+                    const bossHeal = Math.floor(boss.maxHp * 0.07);
+                    session.bossHp = Math.min(boss.maxHp, session.bossHp + bossHeal);
+                    log.push(`💉 보스 회복: +${bossHeal}HP`);
+                }
+
+                // 데미지 적용
+                session.bossHp = Math.max(0, session.bossHp - playerDmg);
+                session.hp     = Math.max(0, session.hp     - bossDmgToPlayer);
+
+                // 흡혈
+                if (lifestealPct > 0 && playerDmg > 0) {
+                    const h = Math.floor(playerDmg * lifestealPct);
+                    session.hp = Math.min(session.maxHp, session.hp + h);
+                    log.push(`🩸 흡혈 +${h}HP`);
+                }
+
+                // 힐
+                if (skills.healRatio > 0) {
+                    const h = Math.floor(session.maxHp * skills.healRatio);
+                    session.hp = Math.min(session.maxHp, session.hp + h);
+                    log.push(`💚 힐 +${h}HP`);
+                }
+
+                // 장벽
+                if (session.playerBarrier > 0) { session.playerBarrier--; }
+
+                // 다음 보스 예고 패턴 (30% 확률)
+                if (Math.random() < 0.3) {
+                    session.pendingPattern = rollBossPattern();
+                    log.push(`\n⚠️ 예고: ${session.pendingPattern.announce}`);
+                }
+
+                session.turn++;
+                session.lastActionAt = Date.now();
+
+                // 결과 판정
+                let result = 'continue';
+                if (session.bossHp <= 0) result = 'win';
+                else if (session.hp <= 0) result = 'lose';
+
+                return finishRaid(result, session, sessionKey, user, log, playerAction, spell);
+            }
+
+            function finishRaid(result, session, sessionKey, user, log, playerAction, spell) {
+                const boss = session.boss;
+                let m = `⚔️ [${boss.name}] 턴${session.turn}\n`;
+                m += log.join('\n') + '\n';
+                m += `─────────────────────\n`;
+                m += `👹 ${boss.name}${session.enraged?' 💢':''}\n${hpBar(session.bossHp, boss.maxHp, session.enraged)}\n`;
+                m += `❤️ 내 HP\n${hpBar(Math.max(0,session.hp), session.maxHp)}\n`;
+                m += `💧 마력: ${session.mana||0}/${session.maxMana||20}\n`;
+
+                if (result === 'win') {
+                    delete raidSessions[sessionKey];
+                    user.bossKills = user.bossKills || {};
+                    user.bossKills[boss.name] = (user.bossKills[boss.name]||0)+1;
+                    user.points += boss.gold; user.stones=(user.stones||0)+boss.stones; user.souls=(user.souls||0)+boss.souls;
+                    let spellDrop=null;
+                    if (Math.random()<0.25){const si=rollSpellDrop(Math.min(4,Math.max(1,Math.ceil((EQUIP_GRADES.indexOf(boss.grade)+1)/2))));if(si){if(!user.spells)user.spells=[];user.spells.push(si);spellDrop=getMagicBook(si);}}
+                    const evolMsgs=checkMagicEvolution(user); saveData(db);
+                    m += `\n🎉 [${boss.name} 처치!]\n골드+${formatKRW(boss.gold)} / 강화석+${boss.stones} / 소울+${boss.souls}`;
+                    if(spellDrop) m+=`\n🔮 마법서: ${spellDrop.element}${spellDrop.name}`;
+                    if(evolMsgs.length) m+='\n'+evolMsgs.join('\n');
+                } else if (result === 'lose') {
+                    delete raidSessions[sessionKey];
+                    const eq=['weapon','armor','shield','ring1','ring2'].filter(s=>user.equipment[s]&&!user.equipment[s].broken);
+                    let broken=null;
+                    if(eq.length>0){const sl=eq[Math.floor(Math.random()*eq.length)];user.equipment[sl].broken=true;broken=user.equipment[sl].name;}
+                    saveData(db);
+                    m += `\n💀 전투 패배`;
+                    if(broken) m+=`\n💥 "${broken}" 파손!`;
+                } else {
+                    saveData(db);
+                    m += `\n👉 !공격 !방어 !회피 !방해 !마법1 !마법2 !후퇴  (⏱️30초)`;
+                }
                 return reply(m);
             }
-
-            const actionMap = { '!공격': '공격', '!강공': '강공', '!방어': '방어', '!회피': '회피', '!방해': '방해' };
-            const action = actionMap[cmd] || '공격';
-
-            // 방어 자세 적용 (이전 턴에 !방어를 선택했을 경우 — 이제 매턴 바로 적용으로 통합)
-            const turnStat = { ...session.stat };
-
-            const { log, result } = raidTurn(user, session, turnStat, action);
-
-            const actionLabel = { 공격: '⚔️ 공격', 강공: '💥 강공', 방어: '🛡️ 방어', 회피: '💨 회피', 방해: '🚫 방해' }[action] || '⚔️';
-            let m = `⚔️ [${session.boss.name}] 턴 ${session.turn} — ${actionLabel}\n`;
-            m += `─────────────────────\n`;
-            m += log.join('\n') + '\n';
-            m += `─────────────────────\n`;
-            m += `👹 ${session.boss.name}${session.enraged ? ' 💢' : ''}\n`;
-            m += `${hpBar(session.bossHp, session.boss.maxHp, session.enraged)}\n`;
-            m += `❤️ 내 HP\n`;
-            m += `${hpBar(session.hp, session.maxHp)}\n`;
-            m += `💧 마력: ${session.mana||0}/${session.maxMana||20}\n`;
-
-            if (result === 'win') {
-                delete raidSessions[sessionKey];
-                user.bossKills = user.bossKills || {};
-                user.bossKills[session.boss.name] = (user.bossKills[session.boss.name] || 0) + 1;
-                user.points  += session.boss.gold;
-                user.stones   = (user.stones || 0) + session.boss.stones;
-                user.souls    = (user.souls  || 0) + session.boss.souls;
-                // 레이드 보스 등급에 따른 마법서 드랍 (25% 확률)
-                let raidSpellDrop = null;
-                if (Math.random() < 0.25) {
-                    const bossGradeIdx = EQUIP_GRADES.indexOf(session.boss.grade);
-                    const spellTier = Math.min(4, Math.max(1, Math.ceil((bossGradeIdx + 1) / 2)));
-                    const spellId = rollSpellDrop(spellTier);
-                    if (spellId) { if (!user.spells) user.spells = []; user.spells.push(spellId); raidSpellDrop = getMagicBook(spellId); }
-                }
-                const evolMsgsR = checkMagicEvolution(user);
-                saveData(db);
-                m += `\n🎉🎊 [${session.boss.name} 처치!]\n`;
-                m += `보상: 골드 +${formatKRW(session.boss.gold)} / 강화석 +${session.boss.stones} / 소울 +${session.boss.souls}\n`;
-                if (raidSpellDrop) m += `🔮 마법서 드랍: ${raidSpellDrop.element}${raidSpellDrop.name} (Tier${raidSpellDrop.tier})\n`;
-                if (evolMsgsR.length) m += evolMsgsR.join('\n') + '\n';
-                m += `누적 처치: ${user.bossKills[session.boss.name]}회`;
-            } else if (result === 'lose') {
-                delete raidSessions[sessionKey];
-                const equipped = ['weapon','armor','shield','ring1','ring2'].filter(s => user.equipment[s] && !user.equipment[s].broken);
-                let brokenName = null;
-                if (equipped.length > 0) {
-                    const slot = equipped[Math.floor(Math.random() * equipped.length)];
-                    user.equipment[slot].broken = true;
-                    brokenName = user.equipment[slot].name;
-                }
-                saveData(db);
-                m += `\n💀 [전투 패배]\n`;
-                if (brokenName) m += `💥 패널티: "${brokenName}" 이(가) 파손!\n!장비수리 로 복구하세요.`;
-                else m += `(장착 장비 없음 — 패널티 없음)`;
-            } else {
-                if (session.pendingPattern) {
-                    m += `\n👉 !공격 !강공 !방어 !회피 !방해 !마법1 !마법2 !후퇴  (⏱️1분)`;
-                } else {
-                    m += `\n👉 !공격 !강공 !방어 !회피 !방해 !마법1 !마법2 !후퇴  (⏱️1분)`;
-                }
-            }
-            return reply(m);
         }
+
 
         if (cmd === '!레이드현황') {
             const sessionKey = `${room}:${sender}`;
