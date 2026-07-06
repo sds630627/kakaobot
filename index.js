@@ -5,7 +5,7 @@ const dgram = require('dgram');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3000;
+const PORT = 3001;
 const DATA_FILE    = path.join(__dirname, 'users.json');
 const MARKET_FILE  = path.join(__dirname, 'market.json');
 const CONFIG_FILE  = path.join(__dirname, 'config.json');
@@ -243,7 +243,7 @@ const server = dgram.createSocket('udp4');
 // ═══════════════════════════════════════════════════════
 const DEFAULT_CONFIG = {
     fees: { sutda: 10, blackjack: 5, baccarat: 8, numberGuess: 5, duel: 8 },
-    sutda: { dealerDieMaxChance: 5 },
+    sutda: { dealerDieMaxChance: 15 },
     gacha: {
         초급상자: { price: 100000, rates: { 일반: 75, 희귀: 20, 영웅: 4, 전설: 1, 신화: 0, 꽝: 0 } },
         중급상자: { price: 1000000, rates: { 일반: 50, 희귀: 30, 영웅: 15, 전설: 4, 신화: 0, 꽝: 1 } },
@@ -4579,14 +4579,18 @@ server.on('message', (msg, rinfo) => {
             }
             const [p1, p2, d1, d2] = shuffled;
 
-            // 실제 섯다 룰: pot = 실제 낸 돈 합계, 딜러는 콜할 때만 판돈 냄
+            // ── 실제 섯다 룰 ──
+            // 시작: 양측 동일 금액 배팅 → 판돈 = baseAmt × 2
+            // 1단계 배팅: 유저 추가 → 딜러 자동으로 콜(동일 추가)
+            // 2단계 배팅: 유저 추가 → 딜러가 콜/다이 결정
+            // 딜러 다이: 딜러가 낸 금액(dealerBet) 가져감 (이득 발생)
             user.points -= baseAmt;
             gameSessions[room] = {
                 player: sender,
                 baseBet: baseAmt,
-                playerBet: baseAmt,   // 플레이어가 낸 총액
-                dealerBet: baseAmt,         // 딜러가 낸 총액 (콜 시에만 추가)
-                pot: baseAmt,         // 현재 판돈 (양측 합계)
+                playerBet: baseAmt,      // 플레이어가 낸 총액
+                dealerBet: baseAmt,      // 딜러도 처음부터 같은 금액 배팅
+                pot: baseAmt * 2,        // 판돈 = 양측 합계 (처음부터 20만)
                 stage: 1,
                 pCards: [p1, p2],
                 dCards: [d1, d2],
@@ -4600,10 +4604,11 @@ server.on('message', (msg, rinfo) => {
             const s0 = gameSessions[room];
             return reply(
                 `🎴 [섯다] ${sender}\n─────────────────────\n` +
-                `🃏 첫 패: [ ${p1.name} ]\n` +
-                `💰 배팅: ${formatKRW(baseAmt)} / 잔액: ${formatKRW(user.points)}\n` +
+                `🃏 내 첫 패: [ ${p1.name} ]\n` +
+                `💰 판돈: ${formatKRW(s0.pot)} (나 ${formatKRW(baseAmt)} + 딜러 ${formatKRW(baseAmt)})\n` +
+                `📦 잔액: ${formatKRW(user.points)}\n` +
                 `─────────────────────\n` +
-                `콜 / 따당 / 하프 / 삥 / 올인 / [금액] / 다이\n` +
+                `콜(유지) / 따당(판돈만큼 추가) / 하프(절반 추가)\n삥(+2천) / 올인 / [금액] / 다이(포기)\n` +
                 (s0.cardChangesLeft > 0 ? `💡 !패교체 가능 (${s0.cardChangesLeft}회)\n` : '')
             );
         }
@@ -4651,24 +4656,28 @@ server.on('message', (msg, rinfo) => {
             const addAmt = result.add;
             user.points -= addAmt;
             s.playerBet += addAmt;
-            s.pot = s.playerBet; // 딜러 콜 전까지는 플레이어 베팅 합계
 
-            // stage 1 → 2패 공개
+            // ── stage 1: 첫 배팅 → 딜러 자동 콜(동일 금액) → 2패 공개 ──
             if (s.stage === 1) {
+                // 딜러도 유저 추가 배팅과 동일하게 자동으로 따라옴
+                s.dealerBet += addAmt;
+                s.pot = s.playerBet + s.dealerBet;
                 s.stage = 2;
                 saveData(db);
                 return reply(
                     `🎴 [두 번째 패 공개]\n─────────────────────\n` +
                     `🃏 내 패: [ ${s.pCards[0].name} ][ ${s.pCards[1].name} ] → ${s.pResult.name}\n` +
-                    `💰 내 배팅: ${formatKRW(s.playerBet)} / 잔액: ${formatKRW(user.points)}\n` +
+                    `💰 판돈: ${formatKRW(s.pot)} (나 ${formatKRW(s.playerBet)} + 딜러 ${formatKRW(s.dealerBet)})\n` +
+                    `📦 잔액: ${formatKRW(user.points)}\n` +
                     `─────────────────────\n` +
-                    `콜 / 따당 / 하프 / 삥 / 올인 / [금액] / 다이\n` +
-                    (s.cardChangesLeft > 0 ? `💡 !패교체 가능 (${s.cardChangesLeft}회)\n` : '')
+                    `콜(판돈유지) / 따당 / 하프 / 삥 / 올인 / [금액] / 다이\n` +
+                    `💡 추가 배팅 시 딜러가 콜/다이 결정\n` +
+                    (s.cardChangesLeft > 0 ? `!패교체 가능 (${s.cardChangesLeft}회)\n` : '')
                 );
             }
 
-            // stage 2 → 딜러 반응 → 결과
-            // 딜러 AI: 이기거나 비기면 콜, 지면 다이 + 15% 블러핑
+            // ── stage 2: 두 번째 배팅 → 딜러 콜/다이 결정 → 결과 ──
+            // 딜러 AI: 패가 좋으면 콜, 나쁘면 다이 (+ 15% 블러핑)
             let dealerCalled;
             if (s.dealerSealed) {
                 dealerCalled = true;
@@ -4678,13 +4687,14 @@ server.on('message', (msg, rinfo) => {
                 dealerCalled = willWin !== bluff;
             }
 
-            // 딜러가 콜하면 실제로 판돈 냄
             if (dealerCalled) {
-                s.dealerBet = s.playerBet;
+                // 딜러 콜: 유저 추가 배팅만큼 딜러도 냄
+                s.dealerBet += addAmt;
                 s.pot = s.playerBet + s.dealerBet;
             }
+            // 딜러 다이: 기존 dealerBet만 있고 추가 안 냄 (유저가 추가 낸 건 손해)
 
-            // 결과 판정
+            // ── 결과 판정 ──
             let outcome;
             if (!dealerCalled) {
                 outcome = 'dealer_die';
@@ -4696,10 +4706,10 @@ server.on('message', (msg, rinfo) => {
                 outcome = 'draw';
             }
 
-            // 정산 — 딜러가 실제로 낸 돈(dealerBet)만 획득 가능
+            // ── 정산 — 딜러도 처음부터 냈으므로 딜러다이 시 이득 발생 ──
             let gain = 0, feeMsg = '';
             if (outcome === 'win') {
-                let payout = s.pot; // playerBet + dealerBet
+                let payout = s.pot;
                 if (!s.feeWaived && s.dealerBet > 0) {
                     const { net, fee } = applyFee(s.dealerBet, 'sutda');
                     payout = s.playerBet + net;
@@ -4709,16 +4719,25 @@ server.on('message', (msg, rinfo) => {
                 gain = payout - s.playerBet;
                 user.stats.sutda.wins = (user.stats.sutda.wins || 0) + 1;
             } else if (outcome === 'lose') {
-                // playerBet은 이미 차감됨
                 user.stats.sutda.losses = (user.stats.sutda.losses || 0) + 1;
             } else if (outcome === 'draw') {
                 user.points += s.playerBet;
                 user.stats.sutda.draws = (user.stats.sutda.draws || 0) + 1;
             } else { // dealer_die
-                // 딜러가 아무것도 안 냈으므로 내 베팅액만 돌려받음
-                user.points += s.playerBet;
+                // 딜러 다이: 딜러가 낸 초기 배팅(baseBet)만 획득
+                // 유저의 stage2 추가 배팅(addAmt)은 손실 (딜러가 안 따라왔으므로)
+                const dealerInitialBet = s.baseBet; // 딜러가 실제로 낸 금액
+                gain = dealerInitialBet;
+                if (!s.feeWaived && dealerInitialBet > 0) {
+                    const { net, fee } = applyFee(dealerInitialBet, 'sutda');
+                    gain = net;
+                    feeMsg = ` (수수료 -${formatKRW(fee)})`;
+                }
+                // 유저는 자신의 원금(playerBet - addAmt = 초기+1단계) + 딜러 초기 배팅 획득
+                // addAmt(2단계 추가)는 이미 차감된 상태이므로 돌려주지 않음
+                const prevBet = s.playerBet - addAmt; // 2단계 배팅 전 유저 총액
+                user.points += prevBet + gain; // 원금 + 딜러 배팅 획득
                 user.stats.sutda.wins = (user.stats.sutda.wins || 0) + 1;
-                feeMsg = ' (딜러 다이 — 원금 회수)';
             }
 
             let msg = `🎴 [섯다 결과]\n─────────────────────\n`;
@@ -4727,16 +4746,15 @@ server.on('message', (msg, rinfo) => {
                 msg += `🤖 딜러: [ ${s.dCards[0].name} ][ ${s.dCards[1].name} ] → ${s.dResult.name}\n`;
                 msg += `💰 판돈: 나 ${formatKRW(s.playerBet)} + 딜러 ${formatKRW(s.dealerBet)} = ${formatKRW(s.pot)}\n`;
             } else {
-                msg += `🤖 딜러 패스 (다이)\n`;
-                msg += `💰 내 배팅: ${formatKRW(s.playerBet)}\n`;
+                msg += `🤖 딜러 도망 (다이)\n`;
+                msg += `💰 초기 딜러 배팅 ${formatKRW(s.baseBet)} 획득 / 내 추가 배팅 ${formatKRW(addAmt)} 손실\n`;
             }
             msg += `─────────────────────\n`;
             if (outcome === 'win')        msg += `🏆 승리! +${formatKRW(gain)}${feeMsg}`;
             else if (outcome === 'lose')  msg += `💸 패배 -${formatKRW(s.playerBet)}`;
-            else if (outcome === 'draw')  msg += `🤝 무승부. 원금 환불`;
-            else                          msg += `↩️ 딜러 다이. 원금 ${formatKRW(s.playerBet)} 회수`;
+            else if (outcome === 'draw')  msg += `🤝 무승부. 각자 환불`;
+            else                          msg += `↩️ 딜러 도망! 초기 판돈 +${formatKRW(gain)}${feeMsg}`;
             msg += `\n잔액: ${formatKRW(user.points)}`;
-
             saveData(db);
             delete gameSessions[room];
             return reply(msg);
