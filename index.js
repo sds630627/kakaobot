@@ -4585,7 +4585,7 @@ server.on('message', (msg, rinfo) => {
                 player: sender,
                 baseBet: baseAmt,
                 playerBet: baseAmt,   // 플레이어가 낸 총액
-                dealerBet: 0,         // 딜러가 낸 총액 (콜 시에만 추가)
+                dealerBet: baseAmt,         // 딜러가 낸 총액 (콜 시에만 추가)
                 pot: baseAmt,         // 현재 판돈 (양측 합계)
                 stage: 1,
                 pCards: [p1, p2],
