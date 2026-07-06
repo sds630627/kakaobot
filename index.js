@@ -243,7 +243,7 @@ const server = dgram.createSocket('udp4');
 // ═══════════════════════════════════════════════════════
 const DEFAULT_CONFIG = {
     fees: { sutda: 10, blackjack: 5, baccarat: 8, numberGuess: 5, duel: 8 },
-    sutda: { dealerDieMaxChance: 15 },
+    sutda: { dealerDieMaxChance: 5 },
     gacha: {
         초급상자: { price: 100000, rates: { 일반: 75, 희귀: 20, 영웅: 4, 전설: 1, 신화: 0, 꽝: 0 } },
         중급상자: { price: 1000000, rates: { 일반: 50, 희귀: 30, 영웅: 15, 전설: 4, 신화: 0, 꽝: 1 } },
