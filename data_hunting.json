@@ -1,30 +1,30 @@
 {
   "_comment": "사냥터 — 전투력 공식: (공격x50+방어x80+HPx5)x3 기준",
   "grounds": [
-    { "name": "뒷산",        "grade": "초급", "recommendedPower": 5000,    "minPower": 500,    "goldMin": 1500,    "goldMax": 6000,    "stoneMin": 2,   "stoneMax": 6,    "lootExtra": [
+    { "name": "뒷산",        "grade": "초급", "recommendedPower": 5000,    "minPower": 3000,    "goldMin": 1500,    "goldMax": 6000,    "stoneMin": 2,   "stoneMax": 6,    "lootExtra": [
       { "type": "box",   "name": "초급장비상자", "chance": 3 },
       { "type": "box",   "name": "초급용병상자", "chance": 2 },
       { "type": "spell", "tier": 1,              "chance": 5 }
     ]},
-    { "name": "어두운 숲",   "grade": "중급", "recommendedPower": 15000,   "minPower": 2000,   "goldMin": 6000,    "goldMax": 24000,   "stoneMin": 5,   "stoneMax": 15,   "lootExtra": [
+    { "name": "어두운 숲",   "grade": "중급", "recommendedPower": 15000,   "minPower": 6000,   "goldMin": 6000,    "goldMax": 24000,   "stoneMin": 5,   "stoneMax": 15,   "lootExtra": [
       { "type": "box",   "name": "중급장비상자", "chance": 2 },
       { "type": "box",   "name": "중급용병상자", "chance": 1 },
       { "type": "spell", "tier": 1,              "chance": 8 }
     ]},
-    { "name": "폐광",        "grade": "고급", "recommendedPower": 50000,   "minPower": 8000,   "goldMin": 25000,   "goldMax": 90000,   "stoneMin": 15,  "stoneMax": 45,   "lootExtra": [
+    { "name": "폐광",        "grade": "고급", "recommendedPower": 50000,   "minPower": 10000,   "goldMin": 25000,   "goldMax": 90000,   "stoneMin": 15,  "stoneMax": 45,   "lootExtra": [
       { "type": "box",    "name": "고급장비상자", "chance": 2 },
       { "type": "box",    "name": "중급용병상자", "chance": 3 },
       { "type": "stones", "amount": [5,15],        "chance": 20 },
       { "type": "spell",  "tier": 1,               "chance": 10 },
       { "type": "spell",  "tier": 2,               "chance": 3 }
     ]},
-    { "name": "얼음 동굴",   "grade": "영웅", "recommendedPower": 180000,  "minPower": 30000,  "goldMin": 90000,   "goldMax": 360000,  "stoneMin": 35,  "stoneMax": 100,  "lootExtra": [
+    { "name": "얼음 동굴",   "grade": "영웅", "recommendedPower": 180000,  "minPower": 50000,  "goldMin": 90000,   "goldMax": 360000,  "stoneMin": 35,  "stoneMax": 100,  "lootExtra": [
       { "type": "box",    "name": "영웅장비상자", "chance": 1 },
       { "type": "box",    "name": "고급용병상자", "chance": 2 },
       { "type": "stones", "amount": [10,30],       "chance": 30 },
       { "type": "spell",  "tier": 2,               "chance": 5 }
     ]},
-    { "name": "용의 둥지",   "grade": "전설", "recommendedPower": 500000,  "minPower": 80000,  "goldMin": 360000,  "goldMax": 1500000, "stoneMin": 90,  "stoneMax": 280,  "lootExtra": [
+    { "name": "용의 둥지",   "grade": "전설", "recommendedPower": 500000,  "minPower": 100000,  "goldMin": 360000,  "goldMax": 1500000, "stoneMin": 90,  "stoneMax": 280,  "lootExtra": [
       { "type": "box",    "name": "전설장비상자", "chance": 1 },
       { "type": "box",    "name": "영웅용병상자", "chance": 1 },
       { "type": "stones", "amount": [20,60],       "chance": 40 },
