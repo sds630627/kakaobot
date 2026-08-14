@@ -35,6 +35,9 @@ server.on('message', (msg, rinfo) => {
         if (content === '!입금계좌') {
             return reply('🏦 입금계좌\n농협 서유성(드림자동차)\n352-2297-9362-13');
         }
+        if (content === '!메테오유') {
+            return reply('🏦 입금계좌\n농협 서유성(메테오유)\n301-0299-7392-51');
+        }
 
         // !상사주소
         if (content === '!상사주소') {
