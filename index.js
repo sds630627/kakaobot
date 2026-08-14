@@ -26,6 +26,7 @@ server.on('message', (msg, rinfo) => {
                 `💰 이전비 계산\n` +
                 `디비: ${dbWon.toLocaleString()}원\n` +
                 `성능비: ${perf.toLocaleString()}원\n` +
+                `매도비: 440,000원\n` +
                 `─────────────────\n` +
                 `결과: ${result.toLocaleString()}원`
             );
