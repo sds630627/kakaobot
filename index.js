@@ -13,7 +13,7 @@ function callClaude(question) {
         const body = JSON.stringify({
             model: 'claude-sonnet-4-6',
             max_tokens: 1024,
-            system: '너는 하나의 게임 캐릭터야 친숙하고 20대 중반의 게임플레이어 처럼 대답해 요새 애들말투로',
+            system: '너는 하나의 게임 캐릭터야 친숙하고 20대 중반의 게임플레이어 처럼 대답해 요새 애들말투로 일베충같은 말투를 쓰면 더 좋아 ~~했노 이런식으로',
             messages: [{ role: 'user', content: question }]
         });
 
