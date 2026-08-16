@@ -21,11 +21,12 @@ server.on('message', (msg, rinfo) => {
             const perf = parseFloat(parts[1].replace(/,/g, '').trim());
             if (isNaN(db) || isNaN(perf)) return reply('❌ 숫자를 올바르게 입력해주세요.');
 
-            const dbWon    = db * 10000;
-            const carPrice = Math.floor((dbWon - perf - 440000) / 1.07);  // 차량대금
-            const acqTax   = Math.floor(carPrice * 0.07);                  // 취등록세 7%
-            const all      = Math.floor(carPrice + acqTax + perf + 440000); // 합계
-            const dball    = Math.floor(dbWon - all);                       // 남은금액
+            const dbWon      = db * 10000;
+            const carPrice   = Math.floor((dbWon - perf - 440000) / 1.07);  // 차량대금 원래값
+            const carPriceRounded = Math.floor(carPrice / 100000) * 100000;  // 10만원 단위 내림
+            const acqTax     = Math.floor(carPriceRounded * 0.07);           // 취등록세 7% (내림 기준)
+            const all        = Math.floor(carPriceRounded + acqTax + perf + 440000); // 합계
+            const dball      = Math.floor(dbWon - all);                       // 남은금액
 
             return reply(
                 '💰 이전비 계산\n' +
@@ -34,7 +35,8 @@ server.on('message', (msg, rinfo) => {
                 '성능비: ' + perf.toLocaleString() + '원\n' +
                 '매도비: 440,000원\n' +
                 '─────────────────\n' +
-                '차량대금: ' + carPrice.toLocaleString() + '원\n' +
+                '차량대금(원래): ' + carPrice.toLocaleString() + '원\n' +
+                '차량대금(내림): ' + carPriceRounded.toLocaleString() + '원\n' +
                 '취등록세(7%): ' + acqTax.toLocaleString() + '원\n' +
                 '─────────────────\n' +
                 '합계: ' + all.toLocaleString() + '원\n' +
