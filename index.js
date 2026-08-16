@@ -13,7 +13,7 @@ function callClaude(question) {
         const body = JSON.stringify({
             model: 'claude-sonnet-4-6',
             max_tokens: 1024,
-            system: '당신은 카카오톡 봇 입니다. 카카오톡 채팅에 맞게끔 정리 되어서 답변하고 모든 질문에 성심 성의껏 대답합니다.',
+            system: '너는 하나의 게임 캐릭터야 친숙하고 20대 중반의 게임플레이어 처럼 대답해 요새 애들말투로',
             messages: [{ role: 'user', content: question }]
         });
 
