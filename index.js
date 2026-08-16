@@ -61,7 +61,6 @@ server.on('message', (msg, rinfo) => {
         if (content.startsWith('!AI') || content.startsWith('!ai')) {
             const question = content.replace(/^!ai/i, '').trim();
             if (!question) return reply('❌ !AI [질문]\n예) !AI 소나타 2020년식 시세 얼마야?');
-            reply('🤔 생각 중...');
             callClaude(question)
                 .then(answer => reply('🤖 ' + answer))
                 .catch(err => reply('❌ AI 오류: ' + err));
