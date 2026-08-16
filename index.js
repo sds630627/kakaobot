@@ -22,11 +22,10 @@ server.on('message', (msg, rinfo) => {
             if (isNaN(db) || isNaN(perf)) return reply('❌ 숫자를 올바르게 입력해주세요.');
 
             const dbWon     = db * 10000;
-            const carPrice  = Math.floor((dbWon - perf) / 1.07);        // 차량대금
-            const vat       = Math.floor(carPrice * 0.07);               // 부가세
-            const transfer  = Math.floor((dbWon - perf - 440000) / 1.07); // 이전비 결과
-            const taxBase   = Math.floor(carPrice * 0.07 * 100 / 7);    // 과세표준 (부가세 역산)
+            const carPrice  = Math.floor((dbWon - perf - 440000) / 1.07);        // 차량대금
             const acqTax    = Math.floor(carPrice * 0.07);               // 취득세 (7%)
+            const all    =  Math.floor(carPrice + perf + 440000);
+            const dball    =  Math.floor(dbwon - all);   
 
             return reply(
                 '💰 이전비 계산\n' +
@@ -37,8 +36,11 @@ server.on('message', (msg, rinfo) => {
                 '─────────────────\n' +
                 '차량대금: ' + carPrice.toLocaleString() + '원\n' +
                 '취등록세(7%): ' + acqTax.toLocaleString() + '원\n' +
+                '매도비: ' + 440,000 '원\n' +
                 '─────────────────\n' +
-                '이전비 결과: ' + transfer.toLocaleString() + '원'
+                '합계: ' + all.toLocaleString() + '원\n' +
+                '남은금액: ' + dball.toLocaleString() + '원\n' +
+                
             );
         }
 
