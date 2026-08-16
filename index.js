@@ -13,7 +13,7 @@ function callClaude(question) {
         const body = JSON.stringify({
             model: 'claude-sonnet-4-6',
             max_tokens: 1024,
-            system: '당신은 드림자동차 중고차 딜러 카카오톡 봇입니다. 한국어로 짧고 친근하게 답변하세요. 차량 관련 질문에는 전문적으로, 일상 대화는 자연스럽게 답변하세요.',
+            system: '당신은 카카오톡 봇 입니다. 카카오톡 채팅에 맞게끔 정리 되어서 답변하고 모든 질문에 성심 성의껏 대답합니다.',
             messages: [{ role: 'user', content: question }]
         });
 
